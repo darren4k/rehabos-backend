@@ -1,0 +1,49 @@
+{
+  "age": 68,
+  "sex": "male",
+  "chief_complaint": "Left knee pain and stiffness s/p total knee arthroplasty POD 2",
+  "diagnosis": [
+    "Status post total knee arthroplasty, left",
+    "Osteoarthritis of knee"
+  ],
+  "icd_codes": ["Z96.651", "M17.11"],
+  "comorbidities": [
+    "Hypertension",
+    "Type 2 diabetes mellitus",
+    "Obesity (BMI 32)"
+  ],
+  "medications": [
+    "Lisinopril 10mg daily",
+    "Metformin 1000mg BID",
+    "Aspirin 81mg daily",
+    "Oxycodone 5mg PRN"
+  ],
+  "allergies": ["Penicillin"],
+  "surgical_history": [
+    "Right TKA 2020",
+    "Appendectomy 1985"
+  ],
+  "precautions": [
+    "WBAT left LE",
+    "CPM 0-90 degrees as tolerated",
+    "DVT prophylaxis per protocol"
+  ],
+  "vitals": {
+    "heart_rate": 78,
+    "blood_pressure_systolic": 138,
+    "blood_pressure_diastolic": 82,
+    "oxygen_saturation": 96,
+    "pain_level": 5
+  },
+  "functional_status": {
+    "berg_balance": null,
+    "timed_up_and_go": null,
+    "fim_score": 85
+  },
+  "setting": "inpatient",
+  "discipline": "PT",
+  "days_since_onset": 2,
+  "prior_level_of_function": "Independent with all ADLs and IADLs. Walked 1 mile daily for exercise. Drove independently. Worked part-time as consultant.",
+  "subjective_notes": "Patient reports left knee pain 5/10 at rest, 7/10 with movement. States 'I want to get back to walking my dog.' Slept poorly due to pain. No numbness or tingling. No calf pain or swelling.",
+  "objective_findings": "A&O x4, follows commands. Left knee: surgical incision clean, dry, intact with staples. Mild edema noted. AROM 5-75 degrees (limited by pain). PROM 0-85 degrees. Strength: hip flexion 3+/5, knee extension 3/5, ankle DF 4/5. Sensation intact. Pulses palpable. Transfers: mod A x1. Ambulation: 25 feet with FWW, CGA, WBAT, min verbal cues for gait pattern."
+}

@@ -1,0 +1,73 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rehab-os"
+version = "0.1.0"
+description = "Multi-agent clinical reasoning system for PT/OT/SLP"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "RehabOS Team" }
+]
+keywords = ["clinical", "rehabilitation", "PT", "OT", "SLP", "AI", "LLM"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Healthcare Industry",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "anthropic>=0.30",
+    "openai>=1.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "typer>=0.12",
+    "chromadb>=0.5",
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+    "rich>=13.0",
+    "tenacity>=8.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.0",
+    "ruff>=0.3",
+    "mypy>=1.9",
+]
+dashboard = [
+    "streamlit>=1.30",
+    "plotly>=5.18",
+]
+all = [
+    "rehab-os[dev,dashboard]",
+]
+
+[project.scripts]
+rehab-os = "rehab_os.cli.commands:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["rehab_os"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
