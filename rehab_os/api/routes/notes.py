@@ -120,7 +120,18 @@ Include clinical_data ONLY when the transcript contains measurable clinical find
 Omit any sub-fields that weren't mentioned. The narrative sections (S/O/A/P) should
 ALSO contain all clinical data in readable prose — clinical_data is the structured mirror.
 
-If the transcript is unclear or missing information for a section, write a clinically appropriate placeholder noting what should be documented."""
+If the transcript is unclear or missing information for a section, write a clinically appropriate placeholder noting what should be documented.
+
+MEDICARE DEFENSIBILITY — ALWAYS apply these principles:
+- Use language that demonstrates WHY a licensed therapist is required (skilled care justification)
+- Link EVERY intervention to a functional goal or deficit
+- Include medical necessity justification in the Assessment section
+- Document complexity that requires a licensed therapist (not an aide)
+- NEVER use "maintenance therapy" — use "skilled maintenance" with clinical rationale if applicable
+- Include patient response to treatment (tolerance, performance, cueing needed)
+- Document prior level of function for comparison
+- Ensure goals are FUNCTIONAL (not just impairment-level like "increase ROM")
+- Include frequency/duration rationale in the Plan section"""
 
 
 # ==================
@@ -327,6 +338,11 @@ class GeneratedNote(BaseModel):
     # Style info
     style_used: str
     word_count: int
+
+    # Evidence & defensibility (populated when clinical intel is available)
+    evidence_suggestions: list[dict] = Field(default_factory=list)
+    defensibility_score: Optional[float] = None
+    defensibility_warnings: list[str] = Field(default_factory=list)
 
     # Suggestions
     improvement_suggestions: list[str] = Field(default_factory=list)
