@@ -1,12 +1,18 @@
 """Evidence Agent for clinical guideline and literature retrieval."""
 
+import logging
 from typing import Any, Optional
 
+import httpx
 from pydantic import BaseModel, Field
 
 from rehab_os.agents.base import AgentContext, BaseAgent, KnowledgeAwareMixin
 from rehab_os.llm import LLMRouter
 from rehab_os.models.evidence import Evidence, EvidenceSummary, GuidelineRecommendation
+
+logger = logging.getLogger(__name__)
+
+PUBMED_BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 
 
 class EvidenceInput(BaseModel):
@@ -23,17 +29,84 @@ class EvidenceInput(BaseModel):
     setting: Optional[str] = None
 
 
+async def _search_pubmed(query: str, max_results: int = 10) -> list[dict]:
+    """Search PubMed for rehabilitation-relevant articles.
+
+    Returns a list of dicts with keys: pmid, title, abstract, authors, journal, year.
+    """
+    results: list[dict] = []
+    rehab_query = (
+        f"({query}) AND (rehabilitation[MeSH] OR physical therapy[MeSH] "
+        "OR occupational therapy[MeSH] OR speech therapy[MeSH]) "
+        "AND (Clinical Trial[pt] OR Systematic Review[pt] OR Practice Guideline[pt])"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            # Step 1: search for PMIDs
+            search_resp = await client.get(
+                f"{PUBMED_BASE_URL}/esearch.fcgi",
+                params={
+                    "db": "pubmed",
+                    "term": rehab_query,
+                    "retmax": max_results,
+                    "retmode": "json",
+                    "sort": "relevance",
+                },
+            )
+            search_resp.raise_for_status()
+            id_list = search_resp.json().get("esearchresult", {}).get("idlist", [])
+            if not id_list:
+                return results
+
+            # Step 2: fetch summaries via esummary (lighter than efetch XML)
+            summary_resp = await client.get(
+                f"{PUBMED_BASE_URL}/esummary.fcgi",
+                params={
+                    "db": "pubmed",
+                    "id": ",".join(id_list),
+                    "retmode": "json",
+                },
+            )
+            summary_resp.raise_for_status()
+            summaries = summary_resp.json().get("result", {})
+
+            for pmid in id_list:
+                info = summaries.get(pmid, {})
+                if not isinstance(info, dict):
+                    continue
+                authors = [a.get("name", "") for a in info.get("authors", [])]
+                results.append(
+                    {
+                        "pmid": pmid,
+                        "title": info.get("title", f"Article {pmid}"),
+                        "authors": authors,
+                        "journal": info.get("fulljournalname", info.get("source", "")),
+                        "year": info.get("pubdate", "")[:4],
+                    }
+                )
+    except Exception as exc:
+        logger.warning("PubMed search failed for query %r: %s", query, exc)
+
+    return results
+
+
 class EvidenceAgent(BaseAgent[EvidenceInput, EvidenceSummary], KnowledgeAwareMixin):
     """Agent for retrieving and synthesizing clinical evidence.
 
-    Searches local knowledge base (CPGs) and optionally PubMed
-    to gather evidence supporting clinical decisions.
+    Combines two evidence sources:
+    1. **Local knowledge base** – Clinical Practice Guidelines stored in the
+       vector store (high-quality, curated).
+    2. **PubMed** – Recent literature via the NCBI E-Utilities API.
+
+    Results are de-duplicated before being sent to the LLM for synthesis.
     """
 
     def __init__(
         self,
         llm: LLMRouter,
         knowledge_base: Optional[Any] = None,
+        enable_pubmed: bool = True,
     ):
         super().__init__(
             llm=llm,
@@ -41,6 +114,7 @@ class EvidenceAgent(BaseAgent[EvidenceInput, EvidenceSummary], KnowledgeAwareMix
             description="Evidence retrieval and synthesis",
         )
         self.knowledge_base = knowledge_base
+        self.enable_pubmed = enable_pubmed
 
     @property
     def system_prompt(self) -> str:
@@ -87,17 +161,41 @@ and provide the best available guidance based on clinical principles."""
         inputs: EvidenceInput,
         context: Optional[AgentContext] = None,
     ) -> EvidenceSummary:
-        """Run evidence search with knowledge base integration."""
+        """Run evidence search with knowledge base + PubMed integration."""
         context = context or AgentContext()
 
-        # Retrieve from knowledge base if available
+        query = f"{inputs.condition} {inputs.clinical_question}"
+
+        # --- Source 1: local vector-store (CPGs / guidelines) ---
         retrieved_evidence: list[Evidence] = []
         if self.knowledge_base:
-            query = f"{inputs.condition} {inputs.clinical_question}"
             retrieved_evidence = await self.retrieve_evidence(query, top_k=10)
 
-        # Format input with retrieved evidence
-        formatted_input = self._format_with_evidence(inputs, retrieved_evidence, context)
+        # --- Source 2: PubMed literature ---
+        pubmed_results: list[dict] = []
+        if self.enable_pubmed:
+            pubmed_results = await _search_pubmed(query, max_results=10)
+
+        # --- De-duplicate across sources ---
+        seen_titles: set[str] = set()
+        deduped_evidence: list[Evidence] = []
+        for ev in retrieved_evidence:
+            norm = ev.source.strip().lower()
+            if norm not in seen_titles:
+                seen_titles.add(norm)
+                deduped_evidence.append(ev)
+
+        deduped_pubmed: list[dict] = []
+        for pm in pubmed_results:
+            norm = pm.get("title", "").strip().lower()
+            if norm not in seen_titles:
+                seen_titles.add(norm)
+                deduped_pubmed.append(pm)
+
+        # Format input with both sources
+        formatted_input = self._format_with_evidence(
+            inputs, deduped_evidence, context, pubmed_articles=deduped_pubmed
+        )
 
         from rehab_os.llm import Message, MessageRole
 
@@ -124,8 +222,9 @@ and provide the best available guidance based on clinical principles."""
         inputs: EvidenceInput,
         retrieved_evidence: list[Evidence],
         context: AgentContext,
+        pubmed_articles: list[dict] | None = None,
     ) -> str:
-        """Format input including retrieved evidence."""
+        """Format input including retrieved evidence and PubMed articles."""
         sections = [
             "## Evidence Request",
             "",
@@ -144,11 +243,12 @@ and provide the best available guidance based on clinical principles."""
 
         sections.append(f"**Discipline:** {context.discipline}")
 
+        # --- Local knowledge base evidence ---
         if retrieved_evidence:
             sections.extend(
                 [
                     "",
-                    "## Retrieved Evidence from Knowledge Base",
+                    "## Retrieved Evidence from Knowledge Base (Clinical Practice Guidelines)",
                     "",
                 ]
             )
@@ -159,15 +259,38 @@ and provide the best available guidance based on clinical principles."""
                     sections.append(f"**Relevance:** {ev.relevance_score:.2f}")
                 sections.append(f"\n{ev.content}\n")
 
+        # --- PubMed literature ---
+        if pubmed_articles:
+            sections.extend(
+                [
+                    "",
+                    "## Recent PubMed Literature",
+                    "",
+                ]
+            )
+            for i, article in enumerate(pubmed_articles, 1):
+                authors_str = ", ".join(article.get("authors", [])[:3])
+                if len(article.get("authors", [])) > 3:
+                    authors_str += " et al."
+                sections.append(
+                    f"{i}. **{article.get('title', 'Untitled')}** — "
+                    f"{authors_str} ({article.get('journal', 'N/A')}, "
+                    f"{article.get('year', 'N/A')}) "
+                    f"[PMID: {article.get('pmid', '')}]"
+                )
+            sections.append("")
+
         sections.extend(
             [
                 "",
                 "## Task",
-                "Please synthesize the available evidence and provide:",
-                "1. Key guideline recommendations",
-                "2. Summary of evidence with quality ratings",
-                "3. Practical clinical implications",
-                "4. Any evidence gaps or limitations",
+                "Please synthesize ALL the available evidence (both local guidelines and PubMed literature) and provide:",
+                "1. Key guideline recommendations (from CPGs)",
+                "2. Supporting literature findings (from PubMed)",
+                "3. Summary of evidence with quality ratings (Oxford CEBM levels)",
+                "4. Practical clinical implications",
+                "5. Any evidence gaps or limitations",
+                "6. Note where guideline recommendations and recent literature agree or conflict",
             ]
         )
 

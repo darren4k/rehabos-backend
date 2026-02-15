@@ -53,6 +53,9 @@ class LLMCallEvent(ObservabilityEvent):
     error_type: Optional[str] = None
     error_message: Optional[str] = None
 
+    # Structured output
+    structured_schema: Optional[str] = None
+
     # Routing info
     is_fallback: bool = False
     fallback_reason: Optional[str] = None

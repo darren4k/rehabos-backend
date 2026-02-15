@@ -56,6 +56,16 @@ class Settings(BaseSettings):
         description="Email for PubMed API (required by NCBI)",
     )
 
+    # Qwen3-TTS Voice Server (DGX Spark)
+    tts_server_url: str = Field(
+        default="http://192.168.68.123:8080",
+        description="URL for Qwen3-TTS server running on DGX Spark",
+    )
+    tts_enabled: bool = Field(
+        default=True,
+        description="Enable voice synthesis features",
+    )
+
     # Vector Store
     chroma_persist_dir: Path = Field(
         default=Path("./data/chroma"),
@@ -68,6 +78,18 @@ class Settings(BaseSettings):
     api_key: str = Field(
         default="",
         description="API key for authenticating requests",
+    )
+
+    # CORS
+    cors_origins: list[str] = Field(
+        default=["http://localhost:3000", "http://localhost:8080"],
+        description="Allowed CORS origins",
+    )
+
+    # Debug
+    debug_mode: bool = Field(
+        default=False,
+        description="Enable debug mode (exposes error details in responses)",
     )
 
     # Logging

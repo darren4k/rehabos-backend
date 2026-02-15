@@ -1,0 +1,23 @@
+{
+  "conversation_id": "6afc6721a5015537",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What exercises are recommended for post-TKA rehabilitation?",
+      "timestamp": "2026-01-25T18:08:42.841333+00:00",
+      "voice_used": false
+    },
+    {
+      "role": "assistant",
+      "content": "Great! I can create a personalized rehabilitation program for your patient with TKA.\n\nThe more information you provide, the more personalized the program will be. I'll take you to the program generator where you can add:\n- Patient demographics\n- Specific impairments\n- Functional limitations\n- Goals and precautions\n\nShould I take you there now?",
+      "timestamp": "2026-01-25T18:08:42.841333+00:00",
+      "voice_used": false
+    }
+  ],
+  "discipline": "PT",
+  "created_at": "2026-01-25T18:08:42.841154+00:00",
+  "last_activity": "2026-01-25T18:08:42.841333+00:00",
+  "context": {
+    "surgery": "tka"
+  }
+}

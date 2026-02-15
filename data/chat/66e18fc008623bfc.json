@@ -1,0 +1,21 @@
+{
+  "conversation_id": "66e18fc008623bfc",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Help me write a daily note",
+      "timestamp": "2026-01-25T14:45:24.425114+00:00",
+      "voice_used": false
+    },
+    {
+      "role": "assistant",
+      "content": "Absolutely! I can help you create a skilled note.\n\nI'll take you to the documentation section where you can:\n- Use **Voice Guided Entry** for hands-free documentation\n- Or fill in the form manually\n\nThe note will be automatically checked for Medicare compliance.\n\nWould you like me to take you there now? Just say \"yes\" or click the button below.",
+      "timestamp": "2026-01-25T14:45:24.425114+00:00",
+      "voice_used": false
+    }
+  ],
+  "discipline": "PT",
+  "created_at": "2026-01-25T14:45:24.422100+00:00",
+  "last_activity": "2026-01-25T14:45:24.425114+00:00",
+  "context": {}
+}

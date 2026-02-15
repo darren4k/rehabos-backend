@@ -1,0 +1,21 @@
+{
+  "conversation_id": "17ddcd085d90336c",
+  "messages": [
+    {
+      "role": "user",
+      "content": "can I talk to you",
+      "timestamp": "2026-01-26T01:51:54.167530+00:00",
+      "voice_used": false
+    },
+    {
+      "role": "assistant",
+      "content": "I understand you're asking about: \"can I talk to you...\"\n\nI'm here to help with all your rehabilitation needs! Here's what I can do right now:\n\n**Quick Actions:**\n\u2022 Say \"write a note\" \u2192 I'll help with documentation\n\u2022 Say \"create a program\" \u2192 Personalized rehab programs\n\u2022 Ask about any condition \u2192 Evidence-based guidance\n\u2022 Say \"analyze patient\" \u2192 Enter and review patient data\n\nOr just keep chatting naturally - I'm learning what you need!\n\nWhat would be most helpful right now?",
+      "timestamp": "2026-01-26T01:51:54.167530+00:00",
+      "voice_used": false
+    }
+  ],
+  "discipline": "PT",
+  "created_at": "2026-01-26T01:51:54.166844+00:00",
+  "last_activity": "2026-01-26T01:51:54.167530+00:00",
+  "context": {}
+}

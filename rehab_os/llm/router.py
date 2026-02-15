@@ -163,6 +163,37 @@ class LLMRouter:
                 event.total_tokens = response.input_tokens + response.output_tokens
             return response
 
+    async def _structured_with_observability(
+        self,
+        llm: BaseLLM,
+        messages: list[Message],
+        schema: type[T],
+        temperature: float,
+        max_tokens: int,
+        request_id: str,
+        is_fallback: bool = False,
+        **kwargs: Any,
+    ) -> T:
+        """Complete structured call with observability logging."""
+        obs = get_observability_logger()
+        msg_dicts = [{"role": m.role.value, "content": m.content} for m in messages]
+
+        with obs.llm_call(
+            provider=llm.provider,
+            model=llm.model_name,
+            messages=msg_dicts,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            request_id=request_id,
+        ) as event:
+            event.is_fallback = is_fallback
+            event.structured_schema = schema.__name__
+            result = await llm.complete_structured(
+                messages, schema, temperature=temperature, max_tokens=max_tokens, **kwargs
+            )
+            event.response_content = result.model_dump_json()
+            return result
+
     async def complete_structured(
         self,
         messages: list[Message],
@@ -171,19 +202,23 @@ class LLMRouter:
         temperature: float = 0.3,
         max_tokens: int = 4096,
         prefer_fallback: bool = False,
+        request_id: Optional[str] = None,
         **kwargs: Any,
     ) -> T:
         """Generate structured output with automatic failover."""
+        obs = get_observability_logger()
+        request_id = request_id or obs.generate_request_id()
+
         if prefer_fallback and self.fallback:
-            return await self.fallback.complete_structured(
-                messages, schema, temperature=temperature, max_tokens=max_tokens, **kwargs
+            return await self._structured_with_observability(
+                self.fallback, messages, schema, temperature, max_tokens, request_id, **kwargs
             )
 
         # Try primary first
         if self._should_try_primary():
             try:
-                result = await self.primary.complete_structured(
-                    messages, schema, temperature=temperature, max_tokens=max_tokens, **kwargs
+                result = await self._structured_with_observability(
+                    self.primary, messages, schema, temperature, max_tokens, request_id, **kwargs
                 )
                 self._record_success()
                 return result
@@ -193,13 +228,20 @@ class LLMRouter:
                     f"Primary LLM structured call failed: {e}. "
                     f"{'Trying fallback...' if self.fallback else 'No fallback.'}"
                 )
+                obs.log_llm_fallback(
+                    from_provider=self.primary.provider,
+                    to_provider=self.fallback.provider if self.fallback else "none",
+                    reason=str(e),
+                    request_id=request_id,
+                )
                 if not self.fallback:
                     raise
 
         # Try fallback
         if self.fallback:
-            return await self.fallback.complete_structured(
-                messages, schema, temperature=temperature, max_tokens=max_tokens, **kwargs
+            return await self._structured_with_observability(
+                self.fallback, messages, schema, temperature, max_tokens, request_id,
+                is_fallback=True, **kwargs
             )
 
         raise LLMError("No healthy LLM available for structured output")

@@ -1,0 +1,25 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${API_PORT:-8080}:8080"
+    env_file: .env
+    volumes:
+      - app-data:/app/data
+    depends_on:
+      - chromadb
+    environment:
+      - CHROMA_PERSIST_DIR=/app/data/chroma
+    restart: unless-stopped
+
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    restart: unless-stopped
+
+volumes:
+  app-data:
+  chroma-data:

@@ -1,0 +1,21 @@
+{
+  "conversation_id": "795aca7efb1ccb24",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi",
+      "timestamp": "2026-01-25T18:06:08.156797+00:00",
+      "voice_used": false
+    },
+    {
+      "role": "assistant",
+      "content": "Hi! Great to see you. Whether you need to document a session, create a program, or look up evidence - I'm here to help. What's on your mind?",
+      "timestamp": "2026-01-25T18:06:08.156797+00:00",
+      "voice_used": false
+    }
+  ],
+  "discipline": "PT",
+  "created_at": "2026-01-25T18:06:08.156068+00:00",
+  "last_activity": "2026-01-25T18:06:08.156797+00:00",
+  "context": {}
+}

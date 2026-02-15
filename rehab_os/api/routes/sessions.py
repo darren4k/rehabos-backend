@@ -21,7 +21,8 @@ class SessionCreate(BaseModel):
 
     user_id: Optional[str] = None
     discipline: str = "PT"
-    setting: str = "outpatient"
+    care_setting: str = "outpatient"
+    chief_complaint: Optional[str] = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -29,12 +30,15 @@ class SessionResponse(BaseModel):
     """Session information."""
 
     session_id: str
-    user_id: Optional[str]
-    discipline: str
-    setting: str
+    user_id: Optional[str] = None
+    discipline: str = "PT"
+    care_setting: str = "outpatient"
     created_at: str
+    updated_at: Optional[str] = None
     last_activity: str
     consult_count: int = 0
+    status: str = "pending"  # pending, in_progress, completed, error
+    chief_complaint: Optional[str] = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -47,6 +51,12 @@ class ConsultHistoryItem(BaseModel):
     diagnosis: Optional[str] = None
     has_red_flags: bool = False
     qa_score: Optional[float] = None
+
+
+@router.get("", response_model=list[SessionResponse])
+async def list_sessions():
+    """List all active sessions."""
+    return [SessionResponse(**s) for s in _sessions.values()]
 
 
 @router.post("/create", response_model=SessionResponse)
@@ -62,10 +72,13 @@ async def create_session(request: SessionCreate):
         "session_id": session_id,
         "user_id": request.user_id,
         "discipline": request.discipline,
-        "setting": request.setting,
+        "care_setting": request.care_setting,
         "created_at": now,
+        "updated_at": now,
         "last_activity": now,
         "consult_count": 0,
+        "status": "pending",
+        "chief_complaint": request.chief_complaint,
         "consults": [],
         "metadata": request.metadata,
     }

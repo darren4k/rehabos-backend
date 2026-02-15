@@ -1,0 +1,23 @@
+{
+  "conversation_id": "a6a4e02a77fe4a10",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Create a TKA rehab program",
+      "timestamp": "2026-01-25T15:33:03.859104+00:00",
+      "voice_used": false
+    },
+    {
+      "role": "assistant",
+      "content": "Great! I can create a personalized rehabilitation program for your patient with TKA.\n\nThe more information you provide, the more personalized the program will be. I'll take you to the program generator where you can add:\n- Patient demographics\n- Specific impairments\n- Functional limitations\n- Goals and precautions\n\nShould I take you there now?",
+      "timestamp": "2026-01-25T15:33:03.859104+00:00",
+      "voice_used": false
+    }
+  ],
+  "discipline": "PT",
+  "created_at": "2026-01-25T15:33:03.858844+00:00",
+  "last_activity": "2026-01-25T15:33:03.859104+00:00",
+  "context": {
+    "surgery": "tka"
+  }
+}

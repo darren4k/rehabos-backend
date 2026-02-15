@@ -1,0 +1,21 @@
+{
+  "time_range": {
+    "start": "2026-02-08T00:53:18.197282",
+    "end": "2026-02-15T00:53:18.197282"
+  },
+  "summary": {
+    "total_agent_runs": 0,
+    "total_llm_calls": 0,
+    "total_tokens": 0,
+    "estimated_cost": 0
+  },
+  "agents": {},
+  "llm_providers": {},
+  "model_tiers": {},
+  "attention_needed": {
+    "high_correction_rate": [],
+    "high_latency": [],
+    "low_confidence": [],
+    "high_fallback": []
+  }
+}

@@ -16,6 +16,7 @@ from rehab_os.llm.base import (
     LLMTimeoutError,
     LLMValidationError,
     Message,
+    parse_structured_response,
 )
 
 logger = logging.getLogger(__name__)
@@ -129,23 +130,7 @@ class LocalLLM(BaseLLM):
             **kwargs,
         )
 
-        # Parse JSON from response
-        try:
-            content = response.content.strip()
-            # Handle markdown code blocks
-            if content.startswith("```"):
-                lines = content.split("\n")
-                content = "\n".join(lines[1:-1]) if lines[-1] == "```" else "\n".join(lines[1:])
-
-            data = json.loads(content)
-            return schema.model_validate(data)
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON from local LLM: {e}\nContent: {response.content}")
-            raise LLMValidationError(f"Invalid JSON in response: {e}") from e
-        except ValidationError as e:
-            logger.error(f"Response doesn't match schema: {e}")
-            raise LLMValidationError(f"Response doesn't match schema: {e}") from e
+        return parse_structured_response(response.content, schema)
 
     async def health_check(self) -> bool:
         """Check if local LLM is available."""

@@ -65,7 +65,6 @@ PT_RED_FLAGS = {
             "unexplained weight loss",
             "history of cancer",
             "night pain",
-            "age > 50",
             "no relief with rest",
         ],
         "urgency": UrgencyLevel.URGENT,
@@ -294,6 +293,20 @@ Always err on the side of patient safety, but use clinical reasoning to avoid un
                     f"Matched keywords: {', '.join(matches)}. "
                     f"Urgency: {flag_data['urgency'].value}. "
                     f"Action: {flag_data['action']}"
+                )
+
+        # Numeric age checks for malignancy risk
+        if "malignancy" in rules and inputs.patient.age and inputs.patient.age > 50:
+            if "malignancy" in findings:
+                findings["malignancy"] = (
+                    findings["malignancy"].rstrip()
+                    + f" Additionally, patient age ({inputs.patient.age}) > 50 is a risk factor."
+                )
+            else:
+                findings["malignancy"] = (
+                    f"Patient age ({inputs.patient.age}) > 50 is a risk factor for malignancy. "
+                    f"Urgency: {rules['malignancy']['urgency'].value}. "
+                    f"Action: {rules['malignancy']['action']}"
                 )
 
         # Check vital signs

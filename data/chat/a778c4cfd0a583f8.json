@@ -1,0 +1,27 @@
+{
+  "conversation_id": "a778c4cfd0a583f8",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are an expert PT rehabilitation specialist with extensive knowledge of evidence-based practice. Provide helpful, accurate, and clinically relevant information.",
+      "timestamp": "2026-01-25T08:42:15.038626+00:00",
+      "voice_used": false
+    },
+    {
+      "role": "user",
+      "content": "Tell me about stroke rehabilitation",
+      "timestamp": "2026-01-25T08:42:15.038806+00:00",
+      "voice_used": false
+    },
+    {
+      "role": "assistant",
+      "content": "**Stroke Rehabilitation**\n\nEvidence-based approaches:\n\n1. **Task-Specific Training** (Level I)\n   - High repetition of functional tasks\n   - Intensity matters: more practice = better outcomes\n\n2. **Constraint-Induced Movement Therapy** (Level I)\n   - For upper extremity recovery\n   - Restrain unaffected arm, intensive practice with affected\n\n3. **Body Weight Supported Treadmill Training** (Level I)\n   - Early gait retraining\n   - Can start even with significant weakness\n\n4. **Mirror Therapy** (Level I)\n   - Visual feedback for motor recovery\n   - Effective for upper extremity and pain\n\n5. **Electrical Stimulation** (Level I)\n   - NMES for motor recruitment\n   - Combine with task practice\n\n**Key Principles:**\n- Neuroplasticity requires intensity and repetition\n- Earlier is generally better\n- Task-specific practice transfers to function\n\n**Outcome Measures:**\n- Fugl-Meyer Assessment\n- Berg Balance Scale\n- 10-Meter Walk Test\n- Stroke Impact Scale\n\nWhat specific aspect of stroke rehab would you like to explore?",
+      "timestamp": "2026-01-25T08:42:15.038806+00:00",
+      "voice_used": false
+    }
+  ],
+  "discipline": "PT",
+  "created_at": "2026-01-25T08:42:15.038626+00:00",
+  "last_activity": "2026-01-25T08:42:15.038806+00:00",
+  "topic_summary": null
+}

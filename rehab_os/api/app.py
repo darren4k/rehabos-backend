@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from rehab_os import __version__
 from rehab_os.api.middleware import APIKeyMiddleware, RequestLoggingMiddleware
-from rehab_os.api.routes import consult, agents, health, feedback, sessions, streaming, mobile, knowledge, analyze, compliance
+from rehab_os.api.routes import consult, agents, health, feedback, sessions, streaming, mobile, knowledge, analyze, compliance, programs, scholar, chat, extract, notes, voice
 from rehab_os.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ def create_app() -> FastAPI:
     # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Configure appropriately for production
+        allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -92,6 +92,12 @@ def create_app() -> FastAPI:
     app.include_router(knowledge.router, prefix="/api/v1", tags=["knowledge"])
     app.include_router(analyze.router, prefix="/api/v1", tags=["analyze"])
     app.include_router(compliance.router, prefix="/api/v1", tags=["compliance"])
+    app.include_router(programs.router, prefix="/api/v1", tags=["programs"])
+    app.include_router(scholar.router, prefix="/api/v1", tags=["scholar"])
+    app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
+    app.include_router(extract.router, prefix="/api/v1", tags=["extract"])
+    app.include_router(notes.router, prefix="/api/v1", tags=["documentation"])
+    app.include_router(voice.router, prefix="/api/v1", tags=["voice"])
 
     # Exception handlers
     @app.exception_handler(Exception)
@@ -101,8 +107,12 @@ def create_app() -> FastAPI:
             status_code=500,
             content={
                 "error": "Internal server error",
-                "detail": str(exc) if settings.log_level == "DEBUG" else None,
+                "detail": str(exc) if settings.debug_mode else None,
             },
         )
 
     return app
+
+
+# Create app instance for uvicorn
+app = create_app()

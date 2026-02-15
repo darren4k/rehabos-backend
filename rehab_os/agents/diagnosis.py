@@ -105,6 +105,20 @@ Express confidence appropriately:
 - Moderate confidence (0.5-0.8): Typical presentation with some atypical features
 - Low confidence (<0.5): Atypical presentation or unclear picture
 
+**CONFIDENCE CALIBRATION RULE:** If ANY of the following apply, you MUST report
+confidence below 0.5 and explicitly state why:
+- Objective findings are ambiguous or contradictory
+- History and exam findings do not align
+- Multiple diagnoses are equally plausible with no differentiating feature
+- Key examination components are missing (e.g., no special tests for suspected ligamentous injury)
+- Patient presentation is atypical for any single diagnosis
+- Red flags are present that could indicate a non-rehabilitation diagnosis
+
+ICD-10 Code Selection — Discipline-Specific Guidance:
+- **PT:** Prefer M-codes (musculoskeletal) and G-codes (neurological) as primary. Use R-codes (symptoms) only when a specific structural diagnosis cannot be determined. Always include laterality suffixes (.1 right, .2 left). For post-surgical patients, use Z96.6xx (joint implant) or Z87.39 (history of surgery) as secondary codes.
+- **OT:** Prefer G-codes for neurological, M-codes for hand/UE orthopedic, and Z-codes for ADL/functional limitations (Z73.6, Z74.x). For cognitive impairment, use R41.x codes.
+- **SLP:** Use R13.x for dysphagia (with specificity: R13.11 oral phase, R13.12 oropharyngeal, R13.13 pharyngeal, R13.14 pharyngoesophageal), R47.x for language/speech, R49.x for voice, F80.x for developmental, and R41.84x for cognitive-communication.
+
 List uncertainties that would benefit from additional testing or evaluation."""
 
     @property

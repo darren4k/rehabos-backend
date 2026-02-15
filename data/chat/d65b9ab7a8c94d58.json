@@ -1,0 +1,39 @@
+{
+  "conversation_id": "d65b9ab7a8c94d58",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are an expert PT rehabilitation specialist with extensive knowledge of evidence-based practice. Provide helpful, accurate, and clinically relevant information.",
+      "timestamp": "2026-01-25T09:37:28.587499+00:00",
+      "voice_used": false
+    },
+    {
+      "role": "user",
+      "content": "hi",
+      "timestamp": "2026-01-25T09:37:28.588395+00:00",
+      "voice_used": false
+    },
+    {
+      "role": "assistant",
+      "content": "Hello! I'm your RehabOS assistant, specialized in evidence-based rehabilitation knowledge. I can help you with:\n\n- Treatment protocols and interventions\n- Clinical practice guidelines\n- Outcome measures and assessments\n- Patient education information\n- Research summaries\n\nWhat would you like to know about today?",
+      "timestamp": "2026-01-25T09:37:28.588395+00:00",
+      "voice_used": false
+    },
+    {
+      "role": "user",
+      "content": "lets talk about cardiac rehab",
+      "timestamp": "2026-01-25T09:37:44.553289+00:00",
+      "voice_used": false
+    },
+    {
+      "role": "assistant",
+      "content": "Based on your question about \"lets talk about cardiac rehab...\", here's what I can tell you:\n\n**General Evidence-Based Principles:**\n\n1. **Assessment First**\n   - Thorough evaluation guides treatment\n   - Use standardized outcome measures\n   - Identify patient goals\n\n2. **Evidence-Based Interventions**\n   - Exercise is typically first-line treatment\n   - Dose matters: intensity, frequency, duration\n   - Patient education is essential\n\n3. **Individualized Approach**\n   - Consider comorbidities\n   - Adapt to patient preferences\n   - Monitor and progress appropriately\n\nWould you like me to provide more specific information? Try asking about:\n- A specific condition (e.g., \"stroke rehabilitation\")\n- A particular intervention (e.g., \"balance training\")\n- Outcome measures for a condition\n- Treatment precautions\n\nI can also generate a personalized rehabilitation program if you provide patient details.",
+      "timestamp": "2026-01-25T09:37:44.553289+00:00",
+      "voice_used": false
+    }
+  ],
+  "discipline": "PT",
+  "created_at": "2026-01-25T09:37:28.587499+00:00",
+  "last_activity": "2026-01-25T09:37:44.553289+00:00",
+  "topic_summary": null
+}

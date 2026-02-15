@@ -1,11 +1,15 @@
 """Abstract LLM interface."""
 
+import json
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 class MessageRole(str, Enum):
@@ -80,6 +84,41 @@ class LLMValidationError(LLMError):
     """Response failed validation."""
 
     pass
+
+
+def parse_structured_response(content: str, schema: type[T]) -> T:
+    """Parse an LLM response string into a Pydantic model.
+
+    Handles markdown code blocks and validates against the schema.
+
+    Args:
+        content: Raw LLM response text (may include ```json blocks)
+        schema: Pydantic model class to validate against
+
+    Returns:
+        Validated instance of schema
+
+    Raises:
+        LLMValidationError: If JSON parsing or schema validation fails
+    """
+    try:
+        text = content.strip()
+        if text.startswith("```"):
+            lines = text.split("\n")
+            if lines[-1].strip() == "```":
+                text = "\n".join(lines[1:-1])
+            else:
+                text = "\n".join(lines[1:])
+
+        data = json.loads(text)
+        return schema.model_validate(data)
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON from LLM: {e}\nContent: {content}")
+        raise LLMValidationError(f"Invalid JSON in response: {e}") from e
+    except ValidationError as e:
+        logger.error(f"Response doesn't match schema: {e}")
+        raise LLMValidationError(f"Response doesn't match schema: {e}") from e
 
 
 class BaseLLM(ABC):

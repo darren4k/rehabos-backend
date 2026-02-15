@@ -3,8 +3,10 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+
+from rehab_os.api.rate_limit import SlidingWindowRateLimiter
 
 from rehab_os.models.output import (
     ClinicalRequest,
@@ -16,6 +18,9 @@ from rehab_os.models.patient import CareSetting, Discipline, PatientContext
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Rate limit: 10 requests per minute per API key (or IP)
+_consult_limiter = SlidingWindowRateLimiter(max_requests=10, window_seconds=60)
 
 
 class ConsultRequest(BaseModel):
@@ -50,6 +55,7 @@ class QuickConsultRequest(BaseModel):
 async def create_consultation(
     request: Request,
     consult_request: ConsultRequest,
+    _rate=Depends(_consult_limiter),
 ) -> ConsultationResponse:
     """Process a clinical consultation through the agent pipeline.
 

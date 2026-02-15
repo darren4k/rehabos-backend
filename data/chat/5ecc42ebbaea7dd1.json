@@ -1,0 +1,23 @@
+{
+  "conversation_id": "5ecc42ebbaea7dd1",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Stroke rehabilitation evidence",
+      "timestamp": "2026-01-25T15:36:08.011526+00:00",
+      "voice_used": false
+    },
+    {
+      "role": "assistant",
+      "content": "**Stroke Rehabilitation**\n\nStroke rehabilitation focuses on neuroplasticity-driven recovery through intensive, task-specific practice.\n\n**Key Evidence-Based Approaches:**\n\n\u2022 High-intensity, repetitive task practice is essential\n\u2022 Earlier intervention generally leads to better outcomes\n\u2022 Constraint-induced movement therapy has strong evidence for UE recovery\n\u2022 Body weight supported treadmill training aids early gait recovery\n\n**Evidence Level:** Level I for most interventions\n\n**Recommended Outcome Measures:** Fugl-Meyer, Berg Balance Scale, 10-Meter Walk Test\n\nWould you like me to:\n- Generate a specific program for this condition?\n- Search for the latest research?\n- Go deeper on any of these interventions?",
+      "timestamp": "2026-01-25T15:36:08.011526+00:00",
+      "voice_used": false
+    }
+  ],
+  "discipline": "PT",
+  "created_at": "2026-01-25T15:36:08.011351+00:00",
+  "last_activity": "2026-01-25T15:36:08.011526+00:00",
+  "context": {
+    "condition": "stroke"
+  }
+}

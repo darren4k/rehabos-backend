@@ -1,0 +1,21 @@
+{
+  "conversation_id": "85d2ac9d34e11dd2",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Otago Exercise Program:",
+      "timestamp": "2026-01-25T15:38:52.898204+00:00",
+      "voice_used": false
+    },
+    {
+      "role": "assistant",
+      "content": "I'd love to help create a rehabilitation program!\n\nTo make it personalized, tell me a bit about your patient:\n- What's their primary diagnosis or surgery?\n- Approximate age?\n- Any specific goals or limitations?\n\nOr I can take you to the program generator where you can enter all the details.",
+      "timestamp": "2026-01-25T15:38:52.898204+00:00",
+      "voice_used": false
+    }
+  ],
+  "discipline": "PT",
+  "created_at": "2026-01-25T15:38:52.898042+00:00",
+  "last_activity": "2026-01-25T15:38:52.898204+00:00",
+  "context": {}
+}

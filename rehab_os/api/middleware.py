@@ -106,8 +106,12 @@ class GuardrailMiddleware(BaseHTTPMiddleware):
                             media_type="application/json",
                         )
 
-                # Reconstruct request with body (since we consumed it)
-                # This is a workaround - in production, use a different approach
+                # Re-inject the consumed body so downstream handlers can read it
+                async def receive():
+                    return {"type": "http.request", "body": body}
+
+                request._receive = receive
+
             except Exception as e:
                 logger.error(f"Guardrail check error: {e}")
 

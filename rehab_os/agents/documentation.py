@@ -180,15 +180,57 @@ Documentation principles:
 - Maintain professional tone
 
 For each note type, include required elements:
-- Initial Evaluation: Comprehensive history, exam, assessment, and plan
-- Daily Note: SOAP format with specific interventions and responses
-- Progress Note: Goal progress, outcome measures, plan updates
-- Discharge Summary: Summary of care, outcomes, recommendations
+
+### Daily Note — SOAP Format (MANDATORY)
+**S (Subjective):** Patient's self-report, pain levels, complaints, goals, and relevant statements in quotes.
+**O (Objective):** Measurable data — vitals, ROM, strength (MMT grades), functional mobility levels (FIM/assist levels), gait parameters, standardized test scores, interventions performed with parameters (sets/reps/time/CPT codes).
+**A (Assessment):** Clinical interpretation of progress toward goals, response to treatment, barriers, skilled reasoning for continued care.
+**P (Plan):** Next session focus, progression/regression plan, frequency, patient/caregiver education provided, referrals.
+
+### Initial Evaluation — Comprehensive Format (MANDATORY)
+Must include ALL of the following sections in order:
+1. Referral/Reason for Evaluation
+2. History of Present Illness (onset, mechanism, prior treatment)
+3. Past Medical/Surgical History
+4. Medications
+5. Social History (living situation, support, prior level of function)
+6. Systems Review
+7. Examination/Tests & Measures (with objective data)
+8. Clinical Impression/Assessment
+9. Diagnosis (with ICD-10 codes)
+10. Prognosis and Rehab Potential
+11. Plan of Care (goals, interventions, frequency/duration)
+
+### Progress Note
+Goal status (met/progressing/plateau), updated outcome measures vs. baseline, justification for continued skilled care, plan modifications.
+
+### Discharge Summary
+Initial vs. discharge functional status comparison, goals achieved vs. not achieved, HEP provided, follow-up recommendations.
+
+## Discipline-Specific Documentation Requirements
+
+### PT Documentation
+- Include gait analysis details (assistive device, distance, pattern deviations)
+- Document weight-bearing status for post-surgical patients
+- Use standardized outcome measures (TUG, 6MWT, Berg, NPRS)
+- Document exercise parameters: sets × reps × resistance/weight
+
+### OT Documentation
+- Document ADL/IADL performance using FIM or assist levels
+- Include hand function specifics (grip/pinch strength, ROM by digit)
+- Note adaptive equipment trialed and patient response
+- Document cognitive/perceptual assessment results
+
+### SLP Documentation
+- Document diet level (IDDSI framework: Level 0-7 for food, 0-4 for drinks)
+- Include aspiration risk rating and compensatory strategies
+- Document speech intelligibility percentage and context
+- Note cognitive-communication screening results (MoCA, CLQT, ALFA)
 
 Billing compliance:
 - Document skilled services clearly
 - Justify medical necessity
-- Include time when required
+- Include time when required (8-minute rule for PT/OT)
 - Reference objective measures
 
 Never include:

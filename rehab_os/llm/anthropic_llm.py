@@ -16,6 +16,7 @@ from rehab_os.llm.base import (
     LLMValidationError,
     Message,
     MessageRole,
+    parse_structured_response,
 )
 
 logger = logging.getLogger(__name__)
@@ -152,27 +153,7 @@ class AnthropicLLM(BaseLLM):
             **kwargs,
         )
 
-        # Parse JSON from response
-        try:
-            content = response.content.strip()
-            # Handle markdown code blocks
-            if content.startswith("```"):
-                lines = content.split("\n")
-                # Remove first line (```json) and last line (```)
-                if lines[-1].strip() == "```":
-                    content = "\n".join(lines[1:-1])
-                else:
-                    content = "\n".join(lines[1:])
-
-            data = json.loads(content)
-            return schema.model_validate(data)
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON from Claude: {e}\nContent: {response.content}")
-            raise LLMValidationError(f"Invalid JSON in response: {e}") from e
-        except ValidationError as e:
-            logger.error(f"Response doesn't match schema: {e}")
-            raise LLMValidationError(f"Response doesn't match schema: {e}") from e
+        return parse_structured_response(response.content, schema)
 
     async def health_check(self) -> bool:
         """Check if Anthropic API is available."""
