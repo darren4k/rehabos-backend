@@ -121,6 +121,10 @@ class ClinicalRequest(BaseModel):
 
     query: str = Field(..., description="Clinical question or consultation request")
     patient: Optional[PatientContext] = None
+    patient_id: Optional[str] = Field(
+        default=None,
+        description="Unique patient identifier for session memory tracking",
+    )
     discipline: Discipline = Discipline.PT
     setting: CareSetting = CareSetting.OUTPATIENT
     task_type: str = Field(

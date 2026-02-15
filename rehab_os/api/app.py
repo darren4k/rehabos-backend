@@ -38,14 +38,24 @@ async def lifespan(app: FastAPI):
         load_samples=True,
     )
 
+    # Initialize session memory
+    from rehab_os.memory import SessionMemoryService
+
+    session_memory = SessionMemoryService(enabled=settings.memu_enabled)
+
     # Initialize orchestrator
-    orchestrator = Orchestrator(llm=llm_router, knowledge_base=vector_store)
+    orchestrator = Orchestrator(
+        llm=llm_router,
+        knowledge_base=vector_store,
+        session_memory=session_memory,
+    )
 
     # Store in app state
     app.state.llm_router = llm_router
     app.state.orchestrator = orchestrator
     app.state.vector_store = vector_store
     app.state.guideline_repo = guideline_repo
+    app.state.session_memory = session_memory
 
     logger.info("RehabOS API started successfully")
 

@@ -86,6 +86,24 @@ class Settings(BaseSettings):
         description="Allowed CORS origins",
     )
 
+    # memU Session Memory
+    memu_enabled: bool = Field(
+        default=True,
+        description="Enable memU-backed patient session memory",
+    )
+    memu_postgres_dsn: str = Field(
+        default="postgresql+psycopg://postgres:postgres@192.168.68.127:5432/memu",
+        description="PostgreSQL DSN for memU storage",
+    )
+    memu_llm_base_url: str = Field(
+        default="http://192.168.68.127:11434/v1",
+        description="OpenAI-compatible LLM endpoint for memU",
+    )
+    memu_llm_model: str = Field(
+        default="qwen3-next:80b",
+        description="LLM model for memU memory extraction",
+    )
+
     # Debug
     debug_mode: bool = Field(
         default=False,

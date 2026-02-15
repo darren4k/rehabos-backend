@@ -41,15 +41,18 @@ class Orchestrator:
         self,
         llm: LLMRouter,
         knowledge_base: Optional[Any] = None,
+        session_memory: Optional[Any] = None,
     ):
         """Initialize orchestrator with all agents.
 
         Args:
             llm: LLM router for model access
             knowledge_base: Optional knowledge base for evidence retrieval
+            session_memory: Optional SessionMemoryService for longitudinal context
         """
         self.llm = llm
         self.knowledge_base = knowledge_base
+        self.session_memory = session_memory
 
         # Initialize agents
         self.red_flag_agent = RedFlagAgent(llm)
@@ -91,6 +94,21 @@ class Orchestrator:
                 discipline=request.discipline.value,
                 setting=request.setting.value,
             )
+
+            # Inject longitudinal patient context if available
+            if self.session_memory and request.patient_id:
+                try:
+                    longitudinal = self.session_memory.get_longitudinal_context(
+                        request.patient_id
+                    )
+                    if longitudinal:
+                        context.metadata["longitudinal_context"] = longitudinal
+                        logger.info(
+                            "Injected longitudinal context for patient %s",
+                            request.patient_id,
+                        )
+                except Exception as e:
+                    logger.warning("Failed to retrieve longitudinal context: %s", e)
 
             processing_notes: list[str] = []
             agents_called: list[str] = []
@@ -189,7 +207,7 @@ class Orchestrator:
             event.agents_called = agents_called
             event.total_llm_calls = len(agents_called)
 
-            return ConsultationResponse(
+            response = ConsultationResponse(
                 safety=safety,
                 diagnosis=diagnosis,
                 evidence=evidence,
@@ -200,6 +218,20 @@ class Orchestrator:
                 citations=all_citations,
                 processing_notes=processing_notes,
             )
+
+            # Persist consultation to session memory
+            if self.session_memory and request.patient_id:
+                try:
+                    self.session_memory.store_consultation(
+                        request.patient_id, response
+                    )
+                    logger.info(
+                        "Stored consultation for patient %s", request.patient_id
+                    )
+                except Exception as e:
+                    logger.warning("Failed to store consultation: %s", e)
+
+            return response
 
     async def _run_safety_check(
         self,
