@@ -104,6 +104,12 @@ class Settings(BaseSettings):
         description="LLM model for memU memory extraction",
     )
 
+    # Patient-Core Database
+    core_database_url: str = Field(
+        default="postgresql+psycopg://postgres:postgres@192.168.68.127:5432/rehab_core",
+        description="PostgreSQL DSN for Patient-Core relational schema",
+    )
+
     # Debug
     debug_mode: bool = Field(
         default=False,

@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from rehab_os import __version__
 from rehab_os.api.middleware import APIKeyMiddleware, RequestLoggingMiddleware
-from rehab_os.api.routes import consult, agents, health, feedback, sessions, streaming, mobile, knowledge, analyze, compliance, programs, scholar, chat, extract, notes, voice, intake
+from rehab_os.api.routes import consult, agents, health, feedback, sessions, streaming, mobile, knowledge, analyze, compliance, programs, scholar, chat, extract, notes, voice, intake, scheduling, patients
 from rehab_os.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,15 @@ async def lifespan(app: FastAPI):
     from rehab_os.memory import SessionMemoryService
 
     session_memory = SessionMemoryService(enabled=settings.memu_enabled)
+
+    # Initialize Patient-Core database
+    from rehab_os.core.database import init_db
+
+    try:
+        await init_db()
+        logger.info("Patient-Core database initialized")
+    except Exception as e:
+        logger.warning("Patient-Core database init failed (non-fatal): %s", e)
 
     # Initialize orchestrator
     orchestrator = Orchestrator(
@@ -109,6 +118,8 @@ def create_app() -> FastAPI:
     app.include_router(notes.router, prefix="/api/v1", tags=["documentation"])
     app.include_router(voice.router, prefix="/api/v1", tags=["voice"])
     app.include_router(intake.router, prefix="/api/v1", tags=["intake"])
+    app.include_router(scheduling.router, prefix="/api/v1", tags=["scheduling"])
+    app.include_router(patients.router, prefix="/api/v1", tags=["patients"])
 
     # Exception handlers
     @app.exception_handler(Exception)

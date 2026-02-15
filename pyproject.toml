@@ -33,6 +33,8 @@ dependencies = [
     "python-dotenv>=1.0",
     "rich>=13.0",
     "tenacity>=8.2",
+    "sqlalchemy[asyncio]>=2.0",
+    "psycopg[binary]>=3.1",
     "memu-py>=0.1",
     "pymupdf>=1.24",
 ]
