@@ -26,6 +26,10 @@ def mock_orchestrator_service():
 @pytest.fixture
 def app(mock_orchestrator_service):
     """Create a minimal FastAPI app with the consult router."""
+    # Reset the rate limiter so tests don't interfere with each other
+    from rehab_os.api.routes.consult import _consult_limiter
+    _consult_limiter._requests.clear()
+
     test_app = FastAPI()
     test_app.include_router(router, prefix="/api/v1")
     test_app.state.orchestrator = mock_orchestrator_service

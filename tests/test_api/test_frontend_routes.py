@@ -94,7 +94,7 @@ class TestSessionEndpoints:
             "/api/v1/sessions/create",
             json={
                 "discipline": "PT",
-                "setting": "outpatient",
+                "care_setting": "outpatient",
                 "metadata": {"source": "test"},
             },
         )
@@ -103,7 +103,7 @@ class TestSessionEndpoints:
         data = response.json()
         assert "session_id" in data
         assert data["discipline"] == "PT"
-        assert data["setting"] == "outpatient"
+        assert data["care_setting"] == "outpatient"
         assert data["consult_count"] == 0
 
     def test_create_session_with_user_id(self, sessions_client):
@@ -577,7 +577,7 @@ class TestSessionModels:
         request = SessionCreate()
         assert request.user_id is None
         assert request.discipline == "PT"
-        assert request.setting == "outpatient"
+        assert request.care_setting == "outpatient"
         assert request.metadata == {}
 
     def test_consult_history_item(self):
