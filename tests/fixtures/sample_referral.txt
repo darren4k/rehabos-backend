@@ -1,0 +1,22 @@
+REFERRAL FOR PHYSICAL THERAPY
+
+Patient: Maria Santos, DOB: 03/15/1958, Female
+Insurance: Blue Cross Blue Shield, Member ID: BCB882991, Group: GRP-445
+Auth #: PA-2026-88431, 12 visits authorized, 2-3x/week for 6 weeks
+
+Referring Physician: Dr. James Chen, MD — Orthopedic Surgery
+Date: 02/10/2026
+
+Diagnosis: Left total knee arthroplasty (ICD-10: Z96.652), Primary osteoarthritis left knee (M17.12)
+Surgery Date: 02/08/2026
+
+History: 67yo female, s/p left TKA POD 2. PMH: HTN, T2DM, hypothyroidism.
+Medications: Lisinopril 10mg, Metformin 1000mg BID, Levothyroxine 50mcg, Oxycodone 5mg PRN
+Allergies: Sulfa drugs, Latex
+
+Surgical Hx: Right TKA (2024), Cholecystectomy (2019)
+Precautions: WBAT L LE, CPM 0-90 degrees, No active knee extension exercises x6 weeks
+Prior Level of Function: Independent with all ADLs/IADLs, walked 1.5 miles daily
+
+Orders: PT evaluate and treat. Focus on ROM, strengthening, gait training, stair negotiation.
+Frequency: 3x/week x 6 weeks outpatient, transition to 2x/week as tolerated.
