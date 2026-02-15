@@ -84,6 +84,8 @@ class PatientContext(BaseModel):
     """Complete patient context for clinical reasoning."""
 
     # Demographics
+    name: Optional[str] = Field(None, description="Full patient name")
+    date_of_birth: Optional[date] = Field(None, description="Patient date of birth")
     age: int = Field(..., ge=0, le=150)
     sex: str = Field(..., pattern="^(male|female|other)$")
     height_cm: Optional[float] = None

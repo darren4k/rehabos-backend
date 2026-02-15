@@ -12,9 +12,90 @@ from enum import Enum
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, Request
 
+from rehab_os.models.clinical import (
+    ROMEntry,
+    MMTEntry,
+    StandardizedTest,
+    FunctionalDeficit,
+    Vitals as ClinicalVitals,
+    BalanceAssessment,
+    ToneAssessment,
+    SensationAssessment,
+    GoalWithBaseline,
+    BillingCode,
+)
+
 router = APIRouter(prefix="/notes", tags=["documentation"])
 
 logger = logging.getLogger(__name__)
+
+
+# ==================
+# TRANSCRIPT-BASED GENERATION
+# ==================
+
+class TranscriptNoteRequest(BaseModel):
+    """Request to generate a SOAP note from a voice transcript."""
+    transcript: str
+    note_type: str = "daily_note"
+    patient_context: Optional[dict] = None
+    preferences: Optional[dict] = None
+    patient_id: Optional[str] = None
+
+
+SOAP_SYSTEM_PROMPT = """You are a clinical documentation specialist for skilled rehabilitation therapy (PT/OT/SLP).
+Your task: convert a therapist's voice dictation into a structured, Medicare-compliant SOAP note.
+
+This note is a LEGAL MEDICAL DOCUMENT that may be printed, faxed to referring physicians,
+submitted to clearinghouses, and reviewed by Medicare. Include ALL clinical data mentioned.
+
+RULES:
+1. Extract information into these sections: Subjective, Objective, Assessment, Plan
+2. Use skilled intervention terminology for Medicare compliance:
+   - "neuromuscular re-education" not "exercises"
+   - "therapeutic exercise" not "stretching"
+   - "gait training" not "walking practice"
+   - "transfer training" not "help getting up"
+   - "functional mobility training", "balance training", "ADL training"
+   - "manual therapy", "patient education", "caregiver training"
+3. Include measurable/functional data (distances, times, assist levels, reps/sets)
+4. Document patient response to interventions
+5. Link interventions to functional goals
+6. Justify continued skilled care (medical necessity)
+7. Reference prior level of function when mentioned
+
+CLINICAL MEASUREMENTS — ALWAYS include when mentioned in transcript:
+8. Range of Motion (ROM): List per joint/region with degrees or qualitative (WFL, WNL).
+   Format: "ROM: R hip flexion 110°, L hip flexion 108°, bilateral knee ext 0-135°, cervical WFL with mild rigidity"
+9. Manual Muscle Testing (MMT): List per muscle group with standard grades (0-5, with +/-).
+   Format: "MMT: Hip flexors 4/5 bilat, hip extensors 3+/5 bilat, quads 4/5 bilat, trunk flexion 3+/5"
+10. Standardized Tests: Include full scores with normative interpretation.
+    Format: "TUG: 18.5 sec (>14 sec = high fall risk); Berg: 42/56 (medium fall risk); Tinetti: 20/28 (high fall risk)"
+11. Functional Deficits: Document prior level vs current level per activity.
+    Format: "Sit-to-stand: PLOF independent → current min A (1-25%); Gait level surfaces: PLOF independent → current SBA with RW x 150ft"
+12. Vitals: BP, HR, SpO2, RR, pain level/location when mentioned
+13. Balance: Static/dynamic sitting/standing, single leg stance times, tandem stance
+14. Sensation, tone, coordination, posture when mentioned
+
+For EVALUATIONS and PROGRESS NOTES, the Objective section should be comprehensive enough
+to stand alone as a clinical record — include ROM, MMT, standardized test tables, and
+functional deficit grids even if the therapist stated them quickly during dictation.
+
+STYLE: {style}
+- concise: Brief bullet points, abbreviations OK (pt, w/, c/o, s/p, WNL)
+- balanced: Standard clinical documentation, moderate detail
+- explanatory: Detailed with clinical reasoning and rationale
+- specific: Highly detailed, measurement-focused, quantitative
+
+OUTPUT FORMAT (return ONLY valid JSON, no markdown fences):
+{{
+  "subjective": "...",
+  "objective": "...",
+  "assessment": "...",
+  "plan": "..."
+}}
+
+If the transcript is unclear or missing information for a section, write a clinically appropriate placeholder noting what should be documented."""
 
 
 # ==================
@@ -140,6 +221,29 @@ class NoteRequest(BaseModel):
 
     # Goals
     goals: list[GoalProgress] = Field(default_factory=list)
+
+    # Clinical evaluation data
+    rom: list[ROMEntry] = Field(default_factory=list)
+    mmt: list[MMTEntry] = Field(default_factory=list)
+    standardized_tests: list[StandardizedTest] = Field(default_factory=list)
+    functional_deficits: list[FunctionalDeficit] = Field(default_factory=list)
+    vitals: Optional[ClinicalVitals] = None
+    balance: Optional[BalanceAssessment] = None
+    tone: list[ToneAssessment] = Field(default_factory=list)
+    sensation: list[SensationAssessment] = Field(default_factory=list)
+
+    # Medical history
+    social_history: Optional[str] = None
+    past_medical_history: list[str] = Field(default_factory=list)
+    past_surgical_history: list[str] = Field(default_factory=list)
+    medications: list[str] = Field(default_factory=list)
+    durable_medical_equipment: list[str] = Field(default_factory=list)
+
+    # Goals with baselines
+    goals_with_baselines: list[GoalWithBaseline] = Field(default_factory=list)
+
+    # Billing
+    billing_codes: list[BillingCode] = Field(default_factory=list)
 
     # Additional context
     patient_response: Optional[str] = None
@@ -314,6 +418,27 @@ def check_medicare_compliance(note_request: NoteRequest, generated_content: dict
     )
     checklist["measurable_data_included"] = has_measurements
 
+    # For evaluations, check clinical data completeness
+    if note_type == "evaluation" and isinstance(note_request, NoteRequest):
+        has_rom = bool(getattr(note_request, 'rom', None))
+        has_mmt = bool(getattr(note_request, 'mmt', None))
+        has_tests = bool(getattr(note_request, 'standardized_tests', None))
+        has_deficits = bool(getattr(note_request, 'functional_deficits', None))
+
+        checklist["rom_documented"] = has_rom
+        checklist["mmt_documented"] = has_mmt
+        checklist["standardized_tests_documented"] = has_tests
+        checklist["functional_deficits_documented"] = has_deficits
+
+        if not has_rom:
+            warnings.append("Evaluation missing ROM measurements")
+        if not has_mmt:
+            warnings.append("Evaluation missing MMT/strength testing")
+        if not has_tests:
+            warnings.append("Evaluation missing standardized tests (e.g. TUG, Berg)")
+        if not has_deficits:
+            warnings.append("Evaluation missing functional deficit documentation")
+
     compliant = len([w for w in warnings if "Missing required" in w]) == 0
 
     return compliant, checklist, warnings
@@ -387,6 +512,94 @@ def format_intervention(intervention: InterventionPerformed, style: NoteStyle) -
         return " ".join(parts)
 
 
+def format_rom(entries: list[ROMEntry], style: NoteStyle) -> str:
+    """Format ROM entries for documentation."""
+    lines = []
+    for e in entries:
+        if e.value is not None:
+            val = f"{e.value}°"
+        elif e.qualitative:
+            val = e.qualitative
+        else:
+            val = "not tested"
+        label = e.joint.replace("_", " ").title()
+        if e.motion != "general":
+            label += f" {e.motion}"
+        if style == NoteStyle.CONCISE:
+            lines.append(f"{label}: {val}")
+        else:
+            side = f" ({e.side})" if e.side != "bilateral" else ""
+            lines.append(f"{label}{side}: {val}")
+    return "\n".join(f"- {l}" for l in lines)
+
+
+def format_mmt(entries: list[MMTEntry], style: NoteStyle) -> str:
+    """Format MMT entries for documentation."""
+    lines = []
+    for e in entries:
+        label = e.muscle_group.replace("_", " ").title()
+        side = f" ({e.side})" if e.side != "bilateral" else ""
+        lines.append(f"{label}{side}: {e.grade}")
+    return "\n".join(f"- {l}" for l in lines)
+
+
+def format_standardized_tests(tests: list[StandardizedTest], style: NoteStyle) -> str:
+    """Format standardized test results."""
+    lines = []
+    for t in tests:
+        result = f"{t.name}: {t.score}"
+        if t.max_score is not None:
+            result += f"/{t.max_score}"
+        if t.unit:
+            result += f" {t.unit}"
+        if t.interpretation and style != NoteStyle.CONCISE:
+            result += f" — {t.interpretation}"
+        lines.append(result)
+    return "\n".join(f"- {l}" for l in lines)
+
+
+def format_functional_deficits(deficits: list[FunctionalDeficit], style: NoteStyle) -> str:
+    """Format functional deficit grid."""
+    lines = []
+    current_cat = None
+    for d in deficits:
+        if d.category != current_cat:
+            current_cat = d.category
+            lines.append(f"\n  {current_cat.replace('_', ' ').title()}:")
+        activity = d.activity.replace("_", " ").title()
+        if style == NoteStyle.CONCISE:
+            lines.append(f"  {activity}: {d.current_level}")
+        else:
+            line = f"  {activity}: {d.current_level} (PLOF: {d.prior_level})"
+            if d.assistive_device:
+                line += f" w/ {d.assistive_device}"
+            if d.distance:
+                line += f" x {d.distance}"
+            if d.quality_notes:
+                line += f" — {d.quality_notes}"
+            lines.append(line)
+    return "\n".join(f"- {l}" if not l.startswith("\n") else l for l in lines)
+
+
+def format_vitals(vitals: ClinicalVitals) -> str:
+    """Format vitals for documentation."""
+    parts = []
+    if vitals.blood_pressure_sitting:
+        parts.append(f"BP: {vitals.blood_pressure_sitting} (sitting)")
+    if vitals.blood_pressure_standing:
+        parts.append(f"BP: {vitals.blood_pressure_standing} (standing)")
+    if vitals.heart_rate:
+        parts.append(f"HR: {vitals.heart_rate} bpm")
+    if vitals.spo2:
+        parts.append(f"SpO2: {vitals.spo2}%")
+    if vitals.respiratory_rate:
+        parts.append(f"RR: {vitals.respiratory_rate}")
+    if vitals.pain_level is not None:
+        loc = f" ({vitals.pain_location})" if vitals.pain_location else ""
+        parts.append(f"Pain: {vitals.pain_level}/10{loc}")
+    return "\n".join(f"- {p}" for p in parts)
+
+
 def generate_note_sections(request: NoteRequest, style: NoteStyle) -> dict[str, str]:
     """Generate note sections based on request and style."""
     sections = {}
@@ -402,6 +615,26 @@ def generate_note_sections(request: NoteRequest, style: NoteStyle) -> dict[str, 
         sections["diagnosis"] = ", ".join(request.diagnosis)
     if request.precautions:
         sections["precautions"] = ", ".join(request.precautions)
+
+    # Vitals
+    if request.vitals:
+        sections["vitals"] = format_vitals(request.vitals)
+
+    # Social History
+    if request.social_history:
+        sections["social_history"] = request.social_history
+
+    # Past Medical History
+    if request.past_medical_history:
+        sections["past_medical_history"] = "\n".join(f"- {dx}" for dx in request.past_medical_history)
+
+    # Medications
+    if request.medications:
+        sections["medications"] = "\n".join(f"- {m}" for m in request.medications)
+
+    # Functional Deficits (detailed grid)
+    if request.functional_deficits:
+        sections["functional_deficits"] = format_functional_deficits(request.functional_deficits, style)
 
     # Functional Status
     if request.functional_status:
@@ -421,6 +654,42 @@ def generate_note_sections(request: NoteRequest, style: NoteStyle) -> dict[str, 
             for i in request.interventions
         ]
         sections["skilled_interventions"] = "\n".join(f"- {line}" for line in intervention_lines)
+
+    # ROM (Objective)
+    if request.rom:
+        sections["rom"] = format_rom(request.rom, style)
+
+    # MMT / Strength (Objective)
+    if request.mmt:
+        sections["mmt"] = format_mmt(request.mmt, style)
+
+    # Standardized Tests (Assessment)
+    if request.standardized_tests:
+        sections["standardized_tests"] = format_standardized_tests(request.standardized_tests, style)
+
+    # Balance Assessment
+    if request.balance:
+        bal = request.balance
+        bal_lines = []
+        for field_name, label in [
+            ("static_sitting", "Static Sitting"), ("dynamic_sitting", "Dynamic Sitting"),
+            ("static_standing", "Static Standing"), ("dynamic_standing", "Dynamic Standing"),
+            ("single_leg_stance_right", "SLS Right"), ("single_leg_stance_left", "SLS Left"),
+            ("tandem_stance", "Tandem Stance"),
+        ]:
+            val = getattr(bal, field_name, None)
+            if val:
+                bal_lines.append(f"- {label}: {val}")
+        if bal_lines:
+            sections["balance_assessment"] = "\n".join(bal_lines)
+
+    # Goals with Baselines
+    if request.goals_with_baselines:
+        goal_lines = []
+        for g in request.goals_with_baselines:
+            tf = f" ({g.timeframe})" if g.timeframe else ""
+            goal_lines.append(f"- [{g.type.upper()}] {g.area}: {g.goal} (Baseline: {g.baseline}){tf}")
+        sections["goals_with_baselines"] = "\n".join(goal_lines)
 
     # Patient Response
     if request.patient_response:
@@ -478,9 +747,13 @@ def assemble_note(sections: dict[str, str], note_type: NoteType, style: NoteStyl
         NoteType.DAILY_NOTE: [
             ("diagnosis", "Dx"),
             ("precautions", "Precautions"),
+            ("vitals", "Vitals"),
             ("functional_status", "Functional Status"),
+            ("rom", "Range of Motion"),
+            ("mmt", "Manual Muscle Testing"),
             ("skilled_interventions", "Skilled Interventions"),
             ("patient_response", "Patient Response"),
+            ("standardized_tests", "Standardized Tests"),
             ("goal_progress", "Goal Progress"),
             ("education_provided", "Education Provided"),
             ("plan", "Plan"),
@@ -498,9 +771,19 @@ def assemble_note(sections: dict[str, str], note_type: NoteType, style: NoteStyl
         NoteType.EVALUATION: [
             ("diagnosis", "Diagnosis"),
             ("precautions", "Precautions/Contraindications"),
+            ("vitals", "Vitals"),
+            ("social_history", "Social History"),
+            ("past_medical_history", "Past Medical History"),
+            ("medications", "Medications"),
+            ("functional_deficits", "Functional Deficits"),
             ("functional_status", "Current Functional Status"),
+            ("rom", "Range of Motion"),
+            ("mmt", "Manual Muscle Testing"),
+            ("balance_assessment", "Balance Assessment"),
+            ("standardized_tests", "Standardized Tests"),
             ("skilled_interventions", "Assessment Performed"),
-            ("goal_progress", "Established Goals"),
+            ("goals_with_baselines", "Goals"),
+            ("goal_progress", "Goal Progress"),
             ("plan", "Treatment Plan"),
             ("education_provided", "Patient/Caregiver Education")
         ],
@@ -533,43 +816,201 @@ def assemble_note(sections: dict[str, str], note_type: NoteType, style: NoteStyl
 # API ENDPOINTS
 # ==================
 
+async def _generate_from_transcript(
+    transcript: str,
+    note_type: str,
+    patient_context: Optional[dict],
+    preferences: Optional[dict],
+    llm_router,
+    session_memory=None,
+    patient_id: Optional[str] = None,
+) -> GeneratedNote:
+    """Core logic for generating a SOAP note from a transcript via LLM."""
+    import json as _json
+    from rehab_os.llm.base import Message as LLMMessage, MessageRole
+
+    style = "balanced"
+    if preferences and "style" in preferences:
+        style = preferences["style"]
+    elif preferences and "style_preferences" in preferences:
+        style = preferences["style_preferences"].get("style", "balanced")
+
+    # Inject cross-namespace longitudinal context if available
+    longitudinal_block = ""
+    if session_memory and patient_id:
+        try:
+            from rehab_os.memory.cross_namespace import get_patient_history, format_cross_namespace_context
+            records = get_patient_history(session_memory, patient_id)
+            longitudinal_block = format_cross_namespace_context(records)
+        except Exception as _e:
+            logger.warning("Failed to fetch cross-namespace context: %s", _e)
+
+    # Build user message with optional patient context
+    user_content = f"Transcript:\n{transcript}"
+    if patient_context:
+        ctx_parts = []
+        for k, v in patient_context.items():
+            if isinstance(v, list):
+                ctx_parts.append(f"{k}: {', '.join(str(i) for i in v)}")
+            else:
+                ctx_parts.append(f"{k}: {v}")
+        user_content = f"Patient Context:\n" + "\n".join(ctx_parts) + "\n\n" + user_content
+
+    if longitudinal_block:
+        user_content = longitudinal_block + "\n\n" + user_content
+
+    messages = [
+        LLMMessage(role=MessageRole.SYSTEM, content=SOAP_SYSTEM_PROMPT.format(style=style)),
+        LLMMessage(role=MessageRole.USER, content=user_content),
+    ]
+
+    response = await llm_router.complete(messages, temperature=0.3, max_tokens=4096)
+
+    # Parse JSON from response
+    raw = response.content.strip()
+    # Strip markdown fences if present
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+        if raw.endswith("```"):
+            raw = raw[:-3]
+        raw = raw.strip()
+
+    try:
+        sections = _json.loads(raw)
+    except _json.JSONDecodeError:
+        # If LLM didn't return valid JSON, wrap the whole response
+        sections = {
+            "subjective": "",
+            "objective": "",
+            "assessment": "",
+            "plan": "",
+            "raw_output": raw,
+        }
+
+    # Build content string
+    content_lines = []
+    for section_name in ["subjective", "objective", "assessment", "plan"]:
+        val = sections.get(section_name, "")
+        if val:
+            content_lines.append(f"{section_name.upper()}:\n{val}")
+    content = "\n\n".join(content_lines)
+
+    # Medicare compliance check on the sections
+    # Reuse the existing keyword-based checks
+    checklist = {}
+    warnings = []
+
+    has_skilled = any(
+        kw.lower() in content.lower() for kw in SKILLED_INTERVENTION_KEYWORDS
+    )
+    checklist["skilled_interventions_documented"] = has_skilled
+    if not has_skilled:
+        warnings.append("Consider adding skilled intervention terminology")
+
+    has_measurements = any(c.isdigit() for c in content)
+    checklist["measurable_data_included"] = has_measurements
+    if not has_measurements:
+        warnings.append("Include measurable/quantitative data")
+
+    nt = note_type.replace("-", "_")
+    requirements = MEDICARE_REQUIREMENTS.get(nt, {})
+    for req in requirements.get("required", []):
+        present = req.replace("_", " ") in content.lower()
+        checklist[req] = present
+        if not present:
+            warnings.append(f"Missing required element: {req.replace('_', ' ').title()}")
+
+    compliant = not any("Missing required" in w for w in warnings)
+
+    return GeneratedNote(
+        note_type=nt,
+        content=content,
+        sections=sections,
+        medicare_compliant=compliant,
+        compliance_checklist=checklist,
+        compliance_warnings=warnings,
+        style_used=style,
+        word_count=len(content.split()),
+        improvement_suggestions=[],
+    )
+
+
+@router.post("/generate-from-transcript", response_model=GeneratedNote)
+async def generate_note_from_transcript(req: TranscriptNoteRequest, request: Request):
+    """Generate a Medicare-compliant SOAP note from a voice transcript using LLM."""
+    llm_router = request.app.state.llm_router
+    session_memory = getattr(request.app.state, "session_memory", None)
+    return await _generate_from_transcript(
+        transcript=req.transcript,
+        note_type=req.note_type,
+        patient_context=req.patient_context,
+        preferences=req.preferences,
+        llm_router=llm_router,
+        session_memory=session_memory,
+        patient_id=req.patient_id,
+    )
+
+
+class NoteRequestWithTranscript(NoteRequest):
+    """Extended NoteRequest that optionally accepts a transcript field."""
+    transcript: Optional[str] = None
+
+
 @router.post("/generate", response_model=GeneratedNote)
-async def generate_skilled_note(request: NoteRequest):
+async def generate_skilled_note(request: Request, note_request: NoteRequestWithTranscript):
     """Generate a Medicare-compliant skilled note.
 
     The note is generated based on the provided clinical data and styled
     according to user/company preferences. Medicare compliance is checked
     and suggestions are provided.
+
+    If a `transcript` field is provided, routes to LLM-based generation.
     """
+    # If transcript provided, route to LLM path
+    if note_request.transcript:
+        llm_router = request.app.state.llm_router
+        prefs = None
+        if note_request.preferences:
+            prefs = {"style": (note_request.style_override or note_request.preferences.style_preferences.style).value}
+        elif note_request.style_override:
+            prefs = {"style": note_request.style_override.value}
+        return await _generate_from_transcript(
+            transcript=note_request.transcript,
+            note_type=note_request.note_type.value,
+            patient_context={"diagnosis": note_request.diagnosis, "precautions": note_request.precautions} if note_request.diagnosis else None,
+            preferences=prefs,
+            llm_router=llm_router,
+        )
+
     # Determine style to use
-    style = request.style_override or (
-        request.preferences.style_preferences.style
-        if request.preferences else NoteStyle.BALANCED
+    style = note_request.style_override or (
+        note_request.preferences.style_preferences.style
+        if note_request.preferences else NoteStyle.BALANCED
     )
 
     # Generate sections
-    sections = generate_note_sections(request, style)
+    sections = generate_note_sections(note_request, style)
 
     # Assemble full note
-    content = assemble_note(sections, request.note_type, style, request.preferences)
+    content = assemble_note(sections, note_request.note_type, style, note_request.preferences)
 
     # Check Medicare compliance
-    compliant, checklist, warnings = check_medicare_compliance(request, sections)
+    compliant, checklist, warnings = check_medicare_compliance(note_request, sections)
 
     # Generate improvement suggestions
     suggestions = []
-    if not request.interventions:
+    if not note_request.interventions:
         suggestions.append("Add skilled interventions to justify medical necessity")
-    if not request.goals:
+    if not note_request.goals:
         suggestions.append("Include measurable goals with progress ratings")
-    if not request.patient_response:
+    if not note_request.patient_response:
         suggestions.append("Document patient response to treatment")
-    if style != NoteStyle.EXPLANATORY and not any("rationale" in str(i).lower() for i in request.interventions):
+    if style != NoteStyle.EXPLANATORY and not any("rationale" in str(i).lower() for i in note_request.interventions):
         suggestions.append("Consider adding skilled rationale for interventions")
 
     # Apply company-specific requirements
-    if request.preferences and request.preferences.company_guidelines:
-        cg = request.preferences.company_guidelines
+    if note_request.preferences and note_request.preferences.company_guidelines:
+        cg = note_request.preferences.company_guidelines
 
         # Check required phrases
         for phrase in cg.required_phrases:
@@ -582,7 +1023,7 @@ async def generate_skilled_note(request: NoteRequest):
                 warnings.append(f"Company guideline: Remove prohibited term '{term}'")
 
     return GeneratedNote(
-        note_type=request.note_type.value,
+        note_type=note_request.note_type.value,
         content=content,
         sections=sections,
         medicare_compliant=compliant,

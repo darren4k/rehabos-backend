@@ -3,8 +3,9 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from rehab_os.intake.pipeline import IntakePipeline
 
@@ -34,11 +35,22 @@ class TextIntakeRequest(BaseModel):
     source_type: str = "referral"
 
 
-def _get_pipeline(request: Request) -> IntakePipeline:
+async def _get_db_optional(request: Request) -> AsyncSession | None:
+    """Get a database session if available, otherwise None."""
+    try:
+        from rehab_os.core.database import get_db
+
+        async for session in get_db():
+            return session
+    except Exception:
+        return None
+
+
+def _get_pipeline(request: Request, db: AsyncSession | None = None) -> IntakePipeline:
     """Build an IntakePipeline from app state."""
     llm_router = request.app.state.llm_router
     session_memory = getattr(request.app.state, "session_memory", None)
-    return IntakePipeline(llm=llm_router, session_memory=session_memory)
+    return IntakePipeline(llm=llm_router, session_memory=session_memory, db_session=db)
 
 
 @router.post("/intake/upload")
@@ -47,6 +59,7 @@ async def upload_referral(
     file: UploadFile = File(...),
     source_type: str = Form("referral"),
     referring_provider: Optional[str] = Form(None),
+    db: AsyncSession | None = Depends(_get_db_optional),
 ):
     """Upload a referral PDF or image and extract a structured patient profile."""
     content_type = file.content_type or "application/octet-stream"
@@ -60,7 +73,7 @@ async def upload_referral(
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Empty file uploaded")
 
-    pipeline = _get_pipeline(request)
+    pipeline = _get_pipeline(request, db)
     metadata = {
         "source_type": source_type,
         "referring_provider": referring_provider,
@@ -75,12 +88,12 @@ async def upload_referral(
 
 
 @router.post("/intake/text")
-async def intake_from_text(request: Request, body: TextIntakeRequest):
+async def intake_from_text(request: Request, body: TextIntakeRequest, db: AsyncSession | None = Depends(_get_db_optional)):
     """Process raw text (copy-paste or typed) through the intake pipeline."""
     if not body.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    pipeline = _get_pipeline(request)
+    pipeline = _get_pipeline(request, db)
 
     try:
         result = await pipeline.process_raw_text(body.text, body.source_type)

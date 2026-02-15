@@ -1,21 +1,100 @@
 {
   "time_range": {
-    "start": "2026-02-08T01:51:48.833216",
-    "end": "2026-02-15T01:51:48.833216"
+    "start": "2026-02-08T13:07:06.292004",
+    "end": "2026-02-15T13:07:06.292004"
   },
   "summary": {
-    "total_agent_runs": 0,
-    "total_llm_calls": 0,
-    "total_tokens": 0,
-    "estimated_cost": 0
+    "total_agent_runs": 80,
+    "total_llm_calls": 334,
+    "total_tokens": 3450,
+    "estimated_cost": 0.03795
   },
-  "agents": {},
-  "llm_providers": {},
-  "model_tiers": {},
+  "agents": {
+    "red_flag": {
+      "total_runs": 11,
+      "success_rate": 1.0,
+      "avg_latency_ms": 0.08611245588822798,
+      "avg_tokens": 0.0,
+      "avg_confidence": null,
+      "correction_rate": 0.09090909090909091,
+      "acceptance_rate": null
+    },
+    "diagnosis": {
+      "total_runs": 9,
+      "success_rate": 1.0,
+      "avg_latency_ms": 0.09965896606445312,
+      "avg_tokens": 0.0,
+      "avg_confidence": 0.85,
+      "correction_rate": 0.1111111111111111,
+      "acceptance_rate": null
+    },
+    "intake": {
+      "total_runs": 60,
+      "success_rate": 1.0,
+      "avg_latency_ms": 0.07574160893758138,
+      "avg_tokens": 0.0,
+      "avg_confidence": null,
+      "correction_rate": 0.0,
+      "acceptance_rate": null
+    }
+  },
+  "llm_providers": {
+    "local/local-model": {
+      "total_calls": 136,
+      "success_rate": 0.3014705882352941,
+      "fallback_rate": 0.0,
+      "avg_latency_ms": 0.1010894775390625,
+      "total_tokens": 930,
+      "cost_estimate": 0.01023
+    },
+    "anthropic/": {
+      "total_calls": 83,
+      "success_rate": 0.0,
+      "fallback_rate": 1.0,
+      "avg_latency_ms": 0.0,
+      "total_tokens": 0,
+      "cost_estimate": 0.0
+    },
+    "anthropic/claude-model": {
+      "total_calls": 104,
+      "success_rate": 0.9038461538461539,
+      "fallback_rate": 0.7980769230769231,
+      "avg_latency_ms": 0.19935851401471077,
+      "total_tokens": 2520,
+      "cost_estimate": 0.027719999999999998
+    },
+    "none/": {
+      "total_calls": 11,
+      "success_rate": 0.0,
+      "fallback_rate": 1.0,
+      "avg_latency_ms": 0.0,
+      "total_tokens": 0,
+      "cost_estimate": 0.0
+    }
+  },
+  "model_tiers": {
+    "standard": {
+      "total_runs": 80,
+      "successful_runs": 80,
+      "total_tokens": 0,
+      "total_latency_ms": 6.388664245605469,
+      "agents": [
+        "red_flag",
+        "intake",
+        "diagnosis"
+      ],
+      "avg_tokens": 0.0,
+      "avg_latency_ms": 0.07985830307006836
+    }
+  },
   "attention_needed": {
     "high_correction_rate": [],
     "high_latency": [],
     "low_confidence": [],
-    "high_fallback": []
+    "high_fallback": [
+      "anthropic/",
+      "anthropic/claude-model",
+      "none/"
+    ]
   }
 }

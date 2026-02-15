@@ -9,6 +9,19 @@ from rehab_os.models.output import (
     OutcomeMeasure,
     ClinicalRequest,
 )
+from rehab_os.models.clinical import (
+    ROMEntry,
+    MMTEntry,
+    StandardizedTest,
+    FunctionalDeficit,
+    BalanceAssessment,
+    ToneAssessment,
+    SensationAssessment,
+    PostureAssessment,
+    GoalWithBaseline,
+    BillingCode,
+)
+from rehab_os.models.clinical import Vitals as ClinicalVitals
 
 __all__ = [
     "PatientContext",
@@ -25,4 +38,16 @@ __all__ = [
     "DiagnosisResult",
     "OutcomeMeasure",
     "ClinicalRequest",
+    # Clinical data models
+    "ROMEntry",
+    "MMTEntry",
+    "StandardizedTest",
+    "FunctionalDeficit",
+    "BalanceAssessment",
+    "ToneAssessment",
+    "SensationAssessment",
+    "PostureAssessment",
+    "GoalWithBaseline",
+    "BillingCode",
+    "ClinicalVitals",
 ]

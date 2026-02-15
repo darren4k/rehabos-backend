@@ -49,6 +49,9 @@ class IntakeResult(BaseModel):
     raw_text_snippet: str = Field(
         ..., description="First 500 chars of source text for audit trail"
     )
+    patient_id: Optional[str] = Field(
+        None, description="Patient-Core record ID if created/matched"
+    )
 
 
 INTAKE_SYSTEM_PROMPT = """\
