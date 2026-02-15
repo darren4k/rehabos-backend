@@ -53,6 +53,7 @@ class Patient(Base):
     insurance_records: Mapped[list[Insurance]] = relationship(back_populates="patient", lazy="selectin")
     encounters: Mapped[list[Encounter]] = relationship(back_populates="patient", lazy="selectin")
     referrals: Mapped[list[Referral]] = relationship(back_populates="patient", lazy="selectin")
+    clinical_notes: Mapped[list[ClinicalNote]] = relationship(back_populates="patient", lazy="selectin")
 
     __table_args__ = (
         Index("ix_patients_last_name", "last_name"),
@@ -164,6 +165,47 @@ class BillingRecord(Base):
     __table_args__ = (
         Index("ix_billing_encounter_id", "encounter_id"),
         Index("ix_billing_status", "status"),
+    )
+
+
+class ClinicalNote(Base):
+    __tablename__ = "clinical_notes"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=_new_uuid)
+    patient_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False)
+    note_type: Mapped[str] = mapped_column(String(50), nullable=False)  # evaluation, daily_note, progress_note, recertification, discharge_summary
+    note_date: Mapped[date] = mapped_column(Date, nullable=False)
+    discipline: Mapped[str] = mapped_column(String(10), default="pt")
+    therapist_name: Mapped[str | None] = mapped_column(String(200))
+
+    # Content
+    soap_subjective: Mapped[str | None] = mapped_column(Text)
+    soap_objective: Mapped[str | None] = mapped_column(Text)
+    soap_assessment: Mapped[str | None] = mapped_column(Text)
+    soap_plan: Mapped[str | None] = mapped_column(Text)
+
+    # Structured clinical data (JSON)
+    structured_data: Mapped[dict | None] = mapped_column(JSON)  # ROM, MMT, tests, functional deficits, vitals, billing
+
+    # Metadata
+    transcript: Mapped[str | None] = mapped_column(Text)
+    compliance_score: Mapped[float | None] = mapped_column(Integer)  # stored as int, interpreted as float
+    compliance_warnings: Mapped[dict | None] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(20), default="final")  # draft, final
+
+    # EMR sync
+    emr_synced: Mapped[bool] = mapped_column(Boolean, default=False)
+    emr_note_id: Mapped[str | None] = mapped_column(String(255))
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    patient: Mapped[Patient] = relationship(back_populates="clinical_notes")
+
+    __table_args__ = (
+        Index("ix_clinical_notes_patient_id", "patient_id"),
+        Index("ix_clinical_notes_note_date", "note_date"),
+        Index("ix_clinical_notes_note_type", "note_type"),
     )
 
 

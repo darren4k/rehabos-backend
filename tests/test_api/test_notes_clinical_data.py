@@ -1,10 +1,15 @@
 """Tests for comprehensive clinical data models in note generation."""
 
+import json
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from rehab_os.api.routes.notes import router
+from rehab_os.api.routes.notes import (
+    router, _generate_from_transcript, GeneratedNote, ExtractedClinicalData,
+)
 from rehab_os.models.clinical import (
     ROMEntry, MMTEntry, StandardizedTest, FunctionalDeficit,
     Vitals, BalanceAssessment, GoalWithBaseline,
@@ -174,6 +179,114 @@ class TestMedicareComplianceWithClinicalData:
         assert any("ROM" in w for w in warnings)
         assert any("MMT" in w for w in warnings)
         assert any("standardized tests" in w for w in warnings)
+
+
+class TestGeneratedNoteStructuredData:
+    """Verify GeneratedNote includes machine-readable clinical_data."""
+
+    def test_clinical_data_populated_from_structured_request(self, client):
+        resp = client.post("/api/v1/notes/generate", json=_full_evaluation_payload())
+        data = resp.json()
+        cd = data["clinical_data"]
+        assert cd is not None
+        assert len(cd["rom"]) == 5
+        assert len(cd["mmt"]) == 6
+        assert len(cd["standardized_tests"]) == 5
+        assert len(cd["functional_deficits"]) == 4
+        assert cd["vitals"]["heart_rate"] == 72
+        assert cd["balance"]["dynamic_standing"] == "Poor"
+        assert "Parkinson" in cd["past_medical_history"][0]
+
+    def test_clinical_data_none_when_no_clinical_fields(self, client):
+        resp = client.post("/api/v1/notes/generate", json={
+            "note_type": "daily_note",
+            "discipline": "pt",
+            "interventions": [{"intervention": "Gait training", "duration_minutes": 15}],
+        })
+        assert resp.json()["clinical_data"] is None
+
+    def test_clinical_data_mmt_grades_preserved(self, client):
+        resp = client.post("/api/v1/notes/generate", json=_full_evaluation_payload())
+        mmt = resp.json()["clinical_data"]["mmt"]
+        grades = {e["muscle_group"]: e["grade"] for e in mmt}
+        assert grades["hip_extension"] == "3+/5"
+        assert grades["knee_extension"] == "4/5"
+
+    def test_clinical_data_standardized_test_interpretation(self, client):
+        resp = client.post("/api/v1/notes/generate", json=_full_evaluation_payload())
+        tests = {t["name"]: t for t in resp.json()["clinical_data"]["standardized_tests"]}
+        assert tests["TUG"]["score"] == 18.5
+        assert tests["TUG"]["unit"] == "seconds"
+        assert "fall risk" in tests["TUG"]["interpretation"].lower()
+        assert tests["Berg Balance Scale"]["max_score"] == 56
+
+
+class TestTranscriptClinicalDataExtraction:
+    """Verify that LLM-extracted clinical_data flows through."""
+
+    @pytest.mark.asyncio
+    async def test_clinical_data_extracted_from_transcript(self):
+        mock_llm = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.content = json.dumps({
+            "subjective": "Pt reports feeling unsteady.",
+            "objective": "ROM: WFL bilateral LE. MMT: hip flexors 4/5 bilat. TUG 18.5 sec.",
+            "assessment": "High fall risk per TUG. Skilled PT warranted.",
+            "plan": "PT 2x/wk x 4 wks.",
+            "clinical_data": {
+                "rom": [
+                    {"joint": "bilateral_hips", "motion": "general", "qualitative": "WFL", "side": "bilateral"},
+                ],
+                "mmt": [
+                    {"muscle_group": "hip_flexion", "grade": "4/5", "side": "bilateral"},
+                ],
+                "standardized_tests": [
+                    {"name": "TUG", "score": 18.5, "unit": "seconds", "interpretation": "High fall risk"},
+                ],
+                "functional_deficits": [
+                    {"category": "gait", "activity": "level_surfaces", "prior_level": "independent", "current_level": "SBA with RW"},
+                ],
+                "vitals": {"heart_rate": 72, "spo2": 97},
+            }
+        })
+        mock_llm.complete = AsyncMock(return_value=mock_response)
+
+        result = await _generate_from_transcript(
+            transcript="Patient eval, ROM WFL bilateral, hip flexors 4/5, TUG 18.5 seconds...",
+            note_type="evaluation",
+            patient_context=None,
+            preferences=None,
+            llm_router=mock_llm,
+        )
+        assert isinstance(result, GeneratedNote)
+        assert result.clinical_data is not None
+        assert len(result.clinical_data.rom) == 1
+        assert result.clinical_data.rom[0].qualitative == "WFL"
+        assert len(result.clinical_data.mmt) == 1
+        assert result.clinical_data.mmt[0].grade == "4/5"
+        assert result.clinical_data.standardized_tests[0].score == 18.5
+        assert result.clinical_data.vitals.heart_rate == 72
+
+    @pytest.mark.asyncio
+    async def test_no_clinical_data_from_simple_transcript(self):
+        mock_llm = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.content = json.dumps({
+            "subjective": "Pt doing well.",
+            "objective": "Gait training x 15 min.",
+            "assessment": "Progressing.",
+            "plan": "Continue.",
+        })
+        mock_llm.complete = AsyncMock(return_value=mock_response)
+
+        result = await _generate_from_transcript(
+            transcript="Quick session, gait training.",
+            note_type="daily_note",
+            patient_context=None,
+            preferences=None,
+            llm_router=mock_llm,
+        )
+        assert result.clinical_data is None
 
 
 class TestClinicalModelsValidation:

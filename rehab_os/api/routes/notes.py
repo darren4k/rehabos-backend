@@ -92,8 +92,33 @@ OUTPUT FORMAT (return ONLY valid JSON, no markdown fences):
   "subjective": "...",
   "objective": "...",
   "assessment": "...",
-  "plan": "..."
+  "plan": "...",
+  "clinical_data": {{
+    "rom": [
+      {{"joint": "right_hip", "motion": "flexion", "value": 110, "side": "right"}},
+      {{"joint": "cervical", "motion": "general", "qualitative": "WFL with mild rigidity", "side": "bilateral"}}
+    ],
+    "mmt": [
+      {{"muscle_group": "hip_flexion", "grade": "4/5", "side": "right"}},
+      {{"muscle_group": "trunk_flexion", "grade": "3+/5", "side": "bilateral"}}
+    ],
+    "standardized_tests": [
+      {{"name": "TUG", "score": 18.5, "unit": "seconds", "interpretation": "High fall risk (>14 sec)"}},
+      {{"name": "Berg Balance Scale", "score": 42, "max_score": 56, "interpretation": "Medium fall risk"}}
+    ],
+    "functional_deficits": [
+      {{"category": "gait", "activity": "level_surfaces", "prior_level": "independent", "current_level": "SBA with RW", "assistive_device": "Rolling Walker", "distance": "150 ft"}}
+    ],
+    "vitals": {{"blood_pressure_sitting": "138/82", "heart_rate": 72, "spo2": 97, "pain_level": 2, "pain_location": "lower back"}},
+    "balance": {{"static_standing": "Fair", "dynamic_standing": "Poor", "single_leg_stance_right": "3 sec"}},
+    "medications": ["Carbidopa-Levodopa 25/100mg TID"],
+    "past_medical_history": ["Parkinson's disease", "HTN"]
+  }}
 }}
+
+Include clinical_data ONLY when the transcript contains measurable clinical findings.
+Omit any sub-fields that weren't mentioned. The narrative sections (S/O/A/P) should
+ALSO contain all clinical data in readable prose — clinical_data is the structured mirror.
 
 If the transcript is unclear or missing information for a section, write a clinically appropriate placeholder noting what should be documented."""
 
@@ -260,11 +285,39 @@ class NoteRequest(BaseModel):
     preferences: Optional[UserPreferences] = None
 
 
+class ExtractedClinicalData(BaseModel):
+    """Structured clinical data extracted from transcript or provided directly.
+
+    This is the machine-readable companion to the narrative note — it enables
+    downstream systems (billing, outcomes tracking, goal-progress dashboards)
+    to consume clinical data without re-parsing prose.
+    """
+    rom: list[ROMEntry] = Field(default_factory=list)
+    mmt: list[MMTEntry] = Field(default_factory=list)
+    standardized_tests: list[StandardizedTest] = Field(default_factory=list)
+    functional_deficits: list[FunctionalDeficit] = Field(default_factory=list)
+    vitals: Optional[ClinicalVitals] = None
+    balance: Optional[BalanceAssessment] = None
+    goals_with_baselines: list[GoalWithBaseline] = Field(default_factory=list)
+    billing_codes: list[BillingCode] = Field(default_factory=list)
+    medications: list[str] = Field(default_factory=list)
+    past_medical_history: list[str] = Field(default_factory=list)
+
+
 class GeneratedNote(BaseModel):
-    """Generated skilled note."""
+    """Generated skilled note — legal medical document suitable for print/fax.
+
+    ``content`` is the assembled narrative (the printable document).
+    ``sections`` is a dict of section-key → rendered text.
+    ``clinical_data`` holds the structured, machine-readable clinical
+    measurements extracted from the transcript (or echoed from the request).
+    """
     note_type: str
     content: str
     sections: dict[str, str]
+
+    # Structured clinical data (machine-readable)
+    clinical_data: Optional[ExtractedClinicalData] = None
 
     # Medicare compliance indicators
     medicare_compliant: bool = True
@@ -876,16 +929,27 @@ async def _generate_from_transcript(
         raw = raw.strip()
 
     try:
-        sections = _json.loads(raw)
+        parsed = _json.loads(raw)
     except _json.JSONDecodeError:
         # If LLM didn't return valid JSON, wrap the whole response
-        sections = {
+        parsed = {
             "subjective": "",
             "objective": "",
             "assessment": "",
             "plan": "",
             "raw_output": raw,
         }
+
+    # Extract structured clinical data if present
+    clinical_data = None
+    raw_clinical = parsed.pop("clinical_data", None)
+    if raw_clinical and isinstance(raw_clinical, dict):
+        try:
+            clinical_data = ExtractedClinicalData(**raw_clinical)
+        except Exception as _e:
+            logger.warning("Failed to parse extracted clinical_data: %s", _e)
+
+    sections = parsed  # remaining keys are narrative sections
 
     # Build content string
     content_lines = []
@@ -926,6 +990,7 @@ async def _generate_from_transcript(
         note_type=nt,
         content=content,
         sections=sections,
+        clinical_data=clinical_data,
         medicare_compliant=compliant,
         compliance_checklist=checklist,
         compliance_warnings=warnings,
@@ -1022,10 +1087,30 @@ async def generate_skilled_note(request: Request, note_request: NoteRequestWithT
             if term.lower() in content.lower():
                 warnings.append(f"Company guideline: Remove prohibited term '{term}'")
 
+    # Build structured clinical data from the request
+    clinical_data = ExtractedClinicalData(
+        rom=note_request.rom,
+        mmt=note_request.mmt,
+        standardized_tests=note_request.standardized_tests,
+        functional_deficits=note_request.functional_deficits,
+        vitals=note_request.vitals,
+        balance=note_request.balance,
+        goals_with_baselines=note_request.goals_with_baselines,
+        billing_codes=note_request.billing_codes,
+        medications=note_request.medications,
+        past_medical_history=note_request.past_medical_history,
+    )
+    # Only include if there's actual data
+    has_clinical = any([
+        clinical_data.rom, clinical_data.mmt, clinical_data.standardized_tests,
+        clinical_data.functional_deficits, clinical_data.vitals,
+    ])
+
     return GeneratedNote(
         note_type=note_request.note_type.value,
         content=content,
         sections=sections,
+        clinical_data=clinical_data if has_clinical else None,
         medicare_compliant=compliant,
         compliance_checklist=checklist,
         compliance_warnings=warnings,
@@ -1155,6 +1240,249 @@ async def get_note_templates():
     }
 
 
+# ==================
+# CHUNK PROCESSING (Incremental transcript)
+# ==================
+
+CHUNK_CLASSIFY_PROMPT = """You are a clinical documentation classifier. Given a short transcript chunk from a therapy session, classify it into the appropriate SOAP section and extract any structured data.
+
+Be FAST. Return ONLY valid JSON with no markdown fences.
+
+Transcript chunk: {chunk}
+Previous context summary: {context}
+Note type: {note_type}
+
+Return:
+{{
+  "section": "subjective" | "objective" | "assessment" | "plan",
+  "content": "formatted clinical content for this section (use skilled terminology)",
+  "structured_data": {{
+    "rom": [{{ "joint": "...", "motion": "...", "value": ..., "side": "..." }}],
+    "mmt": [{{ "muscle_group": "...", "grade": "...", "side": "..." }}],
+    "standardized_tests": [{{ "name": "...", "score": "...", "interpretation": "..." }}],
+    "functional_deficits": [{{ "activity": "...", "prior_level": "...", "current_level": "..." }}],
+    "vitals": {{ "pain_level": null, "pain_location": null, "blood_pressure": null, "heart_rate": null, "spo2": null }},
+    "billing_codes": []
+  }},
+  "suggestions": ["contextual suggestion 1"],
+  "compliance_hints": ["Medicare reminder if applicable"]
+}}
+
+Rules:
+- Subjective: patient reports, complaints, history, pain, HEP compliance
+- Objective: measurements, ROM, MMT, tests, vitals, interventions performed, functional status
+- Assessment: clinical reasoning, progress, prognosis, rehab potential
+- Plan: next visit, goals, recommendations, discharge planning
+- Extract ROM if numbers with degrees mentioned
+- Extract MMT if grades like 3/5, 4+/5 mentioned
+- Extract standardized tests if Berg, TUG, Tinetti, etc mentioned
+- Use skilled terminology: "therapeutic exercise" not "exercises", "ambulated" not "walked"
+- Only include structured_data fields that are actually present in the chunk
+- Keep content concise — this is one chunk, not the whole note"""
+
+
+class ChunkRequest(BaseModel):
+    """Request to process a single transcript chunk incrementally."""
+    chunk: str
+    session_id: str
+    note_type: str = "daily_note"
+    accumulated_context: Optional[str] = None
+
+
+class ChunkResult(BaseModel):
+    """Result from processing a single transcript chunk."""
+    section: str
+    content: str
+    structured_data: Optional[dict] = None
+    suggestions: list[str] = []
+    compliance_hints: list[str] = []
+
+
+# Voice command patterns for quick-add
+import re as _re
+
+VOICE_COMMAND_PATTERNS = [
+    # ROM: "Add ROM right knee flexion 95 degrees"
+    (_re.compile(
+        r'(?:add\s+)?rom\s+(?:(right|left|bilateral|r|l)\s+)?(\w+(?:\s+\w+)?)\s+(?:(flexion|extension|abduction|adduction|rotation|internal|external)\s+)?(\d+)\s*(?:degrees|deg|°)?',
+        _re.IGNORECASE
+    ), 'rom'),
+    # MMT: "MMT quads 3 out of 5 bilateral"
+    (_re.compile(
+        r'(?:add\s+)?mmt\s+(\w+(?:\s+\w+)?)\s+(\d[+\-]?)\s*(?:out\s+of\s+5|\/5)\s*(?:(right|left|bilateral|r|l))?',
+        _re.IGNORECASE
+    ), 'mmt'),
+    # Pain: "Pain level 4 out of 10 right knee"
+    (_re.compile(
+        r'pain\s+(?:level\s+)?(\d+)\s*(?:out\s+of\s+10|\/10)\s*(?:(?:in\s+|at\s+)?(?:the\s+)?(.+))?',
+        _re.IGNORECASE
+    ), 'pain'),
+    # Standardized test: "Berg balance 42 out of 56"
+    (_re.compile(
+        r'(berg|tug|tinetti|barthel|fim|dash|grip)\s+(?:balance\s+)?(?:score\s+)?(\d+(?:\.\d+)?)\s*(?:out\s+of\s+(\d+)|\/(\d+))?(?:\s*(?:seconds?|sec))?',
+        _re.IGNORECASE
+    ), 'test'),
+]
+
+TEST_INTERPRETATIONS = {
+    'berg': lambda s, m: f"{'Low' if s >= 41 else 'Medium' if s >= 21 else 'High'} fall risk",
+    'tug': lambda s, m: f"{'High' if s > 13.5 else 'Low'} fall risk",
+    'tinetti': lambda s, m: f"{'High' if s < 19 else 'Moderate' if s < 24 else 'Low'} fall risk",
+}
+
+
+def extract_voice_commands(chunk: str) -> dict:
+    """Extract structured data from voice commands in the transcript chunk."""
+    result: dict = {'rom': [], 'mmt': [], 'vitals': {}, 'standardized_tests': []}
+
+    for pattern, cmd_type in VOICE_COMMAND_PATTERNS:
+        for match in pattern.finditer(chunk):
+            if cmd_type == 'rom':
+                side_raw, joint, motion, value = match.groups()
+                side = {'r': 'right', 'l': 'left'}.get((side_raw or '').lower(), side_raw or 'bilateral')
+                result['rom'].append({
+                    'joint': joint.strip(),
+                    'motion': (motion or 'flexion').strip(),
+                    'value': int(value),
+                    'side': side.lower(),
+                })
+            elif cmd_type == 'mmt':
+                muscle, grade, side_raw = match.groups()
+                side = {'r': 'right', 'l': 'left'}.get((side_raw or '').lower(), side_raw or 'bilateral')
+                result['mmt'].append({
+                    'muscle_group': muscle.strip(),
+                    'grade': f"{grade}/5",
+                    'side': side.lower(),
+                })
+            elif cmd_type == 'pain':
+                level, location = match.groups()
+                result['vitals']['pain_level'] = int(level)
+                if location:
+                    result['vitals']['pain_location'] = location.strip()
+            elif cmd_type == 'test':
+                name, score, max1, max2 = match.groups()
+                max_score = max1 or max2
+                score_val = float(score)
+                interp_fn = TEST_INTERPRETATIONS.get(name.lower())
+                interp = interp_fn(score_val, float(max_score) if max_score else None) if interp_fn else None
+                result['standardized_tests'].append({
+                    'name': name.strip().title(),
+                    'score': score,
+                    'interpretation': interp,
+                })
+
+    # Clean empty
+    return {k: v for k, v in result.items() if v}
+
+
+@router.post("/process-chunk", response_model=ChunkResult)
+async def process_transcript_chunk(req: ChunkRequest, request: Request):
+    """Process a single transcript chunk incrementally.
+
+    Classifies the chunk into a SOAP section, extracts structured data,
+    and returns suggestions. Uses a lightweight prompt for speed.
+    """
+    import json as _json
+    from rehab_os.llm.base import Message as LLMMessage, MessageRole
+
+    # First, check for voice commands (instant, no LLM needed)
+    voice_data = extract_voice_commands(req.chunk)
+
+    # If it's purely a voice command, return immediately without LLM
+    chunk_stripped = req.chunk.strip()
+    is_pure_command = any(
+        p.fullmatch(chunk_stripped) for p, _ in VOICE_COMMAND_PATTERNS
+    )
+
+    if is_pure_command and voice_data:
+        section = 'objective'
+        content_parts = []
+        if voice_data.get('rom'):
+            for r in voice_data['rom']:
+                content_parts.append(f"ROM: {r['side']} {r['joint']} {r['motion']} {r['value']}°")
+        if voice_data.get('mmt'):
+            for m in voice_data['mmt']:
+                content_parts.append(f"MMT: {m['muscle_group']} {m['grade']} ({m['side']})")
+        if voice_data.get('standardized_tests'):
+            section = 'objective'
+            for t in voice_data['standardized_tests']:
+                content_parts.append(f"{t['name']}: {t['score']}" + (f" — {t['interpretation']}" if t.get('interpretation') else ''))
+        if voice_data.get('vitals', {}).get('pain_level') is not None:
+            section = 'subjective'
+            v = voice_data['vitals']
+            content_parts.append(f"Pain: {v['pain_level']}/10" + (f" ({v['pain_location']})" if v.get('pain_location') else ''))
+
+        return ChunkResult(
+            section=section,
+            content='. '.join(content_parts),
+            structured_data=voice_data if voice_data else None,
+            suggestions=[],
+            compliance_hints=[],
+        )
+
+    # LLM-based classification
+    llm_router = request.app.state.llm_router
+    context = req.accumulated_context or "Beginning of session"
+
+    messages = [
+        LLMMessage(
+            role=MessageRole.USER,
+            content=CHUNK_CLASSIFY_PROMPT.format(
+                chunk=req.chunk,
+                context=context,
+                note_type=req.note_type,
+            ),
+        ),
+    ]
+
+    try:
+        response = await llm_router.complete(messages, temperature=0.1, max_tokens=1024)
+        raw = response.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+            if raw.endswith("```"):
+                raw = raw[:-3]
+            raw = raw.strip()
+
+        parsed = _json.loads(raw)
+    except Exception as e:
+        logger.warning("Chunk classification failed, using heuristic: %s", e)
+        # Fallback: heuristic classification
+        lower = req.chunk.lower()
+        if any(w in lower for w in ['patient report', 'complain', 'pain', 'says', 'feels', 'history']):
+            section = 'subjective'
+        elif any(w in lower for w in ['plan', 'continue', 'next', 'goal', 'recommend', 'discharge']):
+            section = 'plan'
+        elif any(w in lower for w in ['progress', 'improv', 'prognosis', 'plateau', 'potential']):
+            section = 'assessment'
+        else:
+            section = 'objective'
+        parsed = {
+            'section': section,
+            'content': req.chunk,
+            'structured_data': None,
+            'suggestions': [],
+            'compliance_hints': [],
+        }
+
+    # Merge voice command data with LLM-extracted data
+    structured = parsed.get('structured_data') or {}
+    if voice_data:
+        for key in ['rom', 'mmt', 'standardized_tests']:
+            if key in voice_data:
+                structured.setdefault(key, []).extend(voice_data[key])
+        if 'vitals' in voice_data:
+            structured.setdefault('vitals', {}).update(voice_data['vitals'])
+
+    return ChunkResult(
+        section=parsed.get('section', 'objective'),
+        content=parsed.get('content', req.chunk),
+        structured_data=structured if structured else None,
+        suggestions=parsed.get('suggestions', []),
+        compliance_hints=parsed.get('compliance_hints', []),
+    )
+
+
 @router.get("/medicare-requirements/{note_type}")
 async def get_medicare_requirements(note_type: str):
     """Get Medicare documentation requirements for a note type."""
@@ -1173,3 +1501,86 @@ async def get_medicare_requirements(note_type: str):
             "Justify continued need for skilled care"
         ]
     }
+
+
+# ==================
+# CLINICAL NOTE CRUD (Persisted)
+# ==================
+
+import uuid as _uuid
+from datetime import date as _date
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from rehab_os.core.database import get_db
+from rehab_os.core.repository import ClinicalNoteRepository
+from rehab_os.core.schemas import ClinicalNoteCreate, ClinicalNoteRead, ClinicalNoteUpdate
+
+
+@router.post("/save", response_model=ClinicalNoteRead)
+async def save_note(payload: ClinicalNoteCreate, db: AsyncSession = Depends(get_db)):
+    """Save a finalized clinical note."""
+    repo = ClinicalNoteRepository(db)
+    note = await repo.create(**payload.model_dump())
+    return note
+
+
+@router.get("/patient/{patient_id}", response_model=list[ClinicalNoteRead])
+async def list_patient_notes(
+    patient_id: _uuid.UUID,
+    type: Optional[str] = None,
+    q: Optional[str] = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """List all notes for a patient, optionally filtered by type or search query."""
+    repo = ClinicalNoteRepository(db)
+    if q:
+        return await repo.search_notes(patient_id, q, limit=limit)
+    return await repo.list_by_patient(patient_id, note_type=type, limit=limit)
+
+
+@router.get("/{note_id}", response_model=ClinicalNoteRead)
+async def get_note(note_id: _uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Get a single note by ID."""
+    repo = ClinicalNoteRepository(db)
+    note = await repo.get_by_id(note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return note
+
+
+@router.put("/{note_id}", response_model=ClinicalNoteRead)
+async def update_note(note_id: _uuid.UUID, payload: ClinicalNoteUpdate, db: AsyncSession = Depends(get_db)):
+    """Update an existing note."""
+    repo = ClinicalNoteRepository(db)
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    note = await repo.update(note_id, **updates)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return note
+
+
+@router.post("/{note_id}/copy", response_model=ClinicalNoteRead)
+async def copy_note(note_id: _uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Duplicate a note for editing — sets today's date and marks as draft."""
+    repo = ClinicalNoteRepository(db)
+    original = await repo.get_by_id(note_id)
+    if not original:
+        raise HTTPException(status_code=404, detail="Note not found")
+    copy = await repo.create(
+        patient_id=original.patient_id,
+        note_type=original.note_type,
+        note_date=_date.today(),
+        discipline=original.discipline,
+        therapist_name=original.therapist_name,
+        soap_subjective=original.soap_subjective,
+        soap_objective=original.soap_objective,
+        soap_assessment=original.soap_assessment,
+        soap_plan=original.soap_plan,
+        structured_data=original.structured_data,
+        compliance_score=original.compliance_score,
+        compliance_warnings=original.compliance_warnings,
+        status="draft",
+    )
+    return copy

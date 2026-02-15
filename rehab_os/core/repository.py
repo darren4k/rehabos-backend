@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from rehab_os.core.models import (
     AuditLog,
     BillingRecord,
+    ClinicalNote,
     Encounter,
     Insurance,
     Patient,
@@ -174,6 +175,70 @@ class BillingRepository:
 
     async def list_unbilled(self, limit: int = 100) -> Sequence[BillingRecord]:
         stmt = select(BillingRecord).where(BillingRecord.status == "unbilled").limit(limit)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+
+class ClinicalNoteRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(self, **kwargs) -> ClinicalNote:
+        note = ClinicalNote(**kwargs)
+        self.session.add(note)
+        await self.session.flush()
+        return note
+
+    async def get_by_id(self, note_id: uuid.UUID) -> Optional[ClinicalNote]:
+        return await self.session.get(ClinicalNote, note_id)
+
+    async def update(self, note_id: uuid.UUID, **kwargs) -> Optional[ClinicalNote]:
+        note = await self.get_by_id(note_id)
+        if not note:
+            return None
+        for k, v in kwargs.items():
+            if v is not None:
+                setattr(note, k, v)
+        note.updated_at = datetime.now(timezone.utc)
+        await self.session.flush()
+        return note
+
+    async def list_by_patient(
+        self, patient_id: uuid.UUID, note_type: Optional[str] = None, limit: int = 50
+    ) -> Sequence[ClinicalNote]:
+        stmt = select(ClinicalNote).where(ClinicalNote.patient_id == patient_id)
+        if note_type:
+            stmt = stmt.where(ClinicalNote.note_type == note_type)
+        stmt = stmt.order_by(ClinicalNote.note_date.desc()).limit(limit)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def get_latest_by_type(self, patient_id: uuid.UUID, note_type: str) -> Optional[ClinicalNote]:
+        stmt = (
+            select(ClinicalNote)
+            .where(ClinicalNote.patient_id == patient_id, ClinicalNote.note_type == note_type)
+            .order_by(ClinicalNote.note_date.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def search_notes(self, patient_id: uuid.UUID, query: str, limit: int = 20) -> Sequence[ClinicalNote]:
+        pattern = f"%{query}%"
+        stmt = (
+            select(ClinicalNote)
+            .where(
+                ClinicalNote.patient_id == patient_id,
+                or_(
+                    ClinicalNote.soap_subjective.ilike(pattern),
+                    ClinicalNote.soap_objective.ilike(pattern),
+                    ClinicalNote.soap_assessment.ilike(pattern),
+                    ClinicalNote.soap_plan.ilike(pattern),
+                ),
+            )
+            .order_by(ClinicalNote.note_date.desc())
+            .limit(limit)
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 

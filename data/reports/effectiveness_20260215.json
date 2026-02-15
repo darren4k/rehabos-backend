@@ -1,7 +1,7 @@
 {
   "time_range": {
-    "start": "2026-02-08T13:07:06.292004",
-    "end": "2026-02-15T13:07:06.292004"
+    "start": "2026-02-08T13:19:22.711688",
+    "end": "2026-02-15T13:19:22.711688"
   },
   "summary": {
     "total_agent_runs": 80,
@@ -79,9 +79,9 @@
       "total_tokens": 0,
       "total_latency_ms": 6.388664245605469,
       "agents": [
-        "red_flag",
+        "diagnosis",
         "intake",
-        "diagnosis"
+        "red_flag"
       ],
       "avg_tokens": 0.0,
       "avg_latency_ms": 0.07985830307006836

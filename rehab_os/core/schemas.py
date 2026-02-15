@@ -54,6 +54,71 @@ class PatientRead(BaseModel):
 
 # --- Insurance ---
 
+# --- Clinical Note ---
+
+class ClinicalNoteCreate(BaseModel):
+    patient_id: uuid.UUID
+    note_type: str  # evaluation, daily_note, progress_note, recertification, discharge_summary
+    note_date: date
+    discipline: str = "pt"
+    therapist_name: Optional[str] = None
+    soap_subjective: Optional[str] = None
+    soap_objective: Optional[str] = None
+    soap_assessment: Optional[str] = None
+    soap_plan: Optional[str] = None
+    structured_data: Optional[dict] = None
+    transcript: Optional[str] = None
+    compliance_score: Optional[float] = None
+    compliance_warnings: Optional[list[str]] = None
+    status: str = "final"
+    emr_synced: bool = False
+    emr_note_id: Optional[str] = None
+
+
+class ClinicalNoteUpdate(BaseModel):
+    note_type: Optional[str] = None
+    note_date: Optional[date] = None
+    discipline: Optional[str] = None
+    therapist_name: Optional[str] = None
+    soap_subjective: Optional[str] = None
+    soap_objective: Optional[str] = None
+    soap_assessment: Optional[str] = None
+    soap_plan: Optional[str] = None
+    structured_data: Optional[dict] = None
+    transcript: Optional[str] = None
+    compliance_score: Optional[float] = None
+    compliance_warnings: Optional[list[str]] = None
+    status: Optional[str] = None
+    emr_synced: Optional[bool] = None
+    emr_note_id: Optional[str] = None
+
+
+class ClinicalNoteRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    patient_id: uuid.UUID
+    note_type: str
+    note_date: date
+    discipline: str
+    therapist_name: Optional[str] = None
+    soap_subjective: Optional[str] = None
+    soap_objective: Optional[str] = None
+    soap_assessment: Optional[str] = None
+    soap_plan: Optional[str] = None
+    structured_data: Optional[dict] = None
+    transcript: Optional[str] = None
+    compliance_score: Optional[float] = None
+    compliance_warnings: Optional[list] = None
+    status: str = "final"
+    emr_synced: bool = False
+    emr_note_id: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+
+# --- Insurance ---
+
 class InsuranceCreate(BaseModel):
     patient_id: uuid.UUID
     payer_name: str
