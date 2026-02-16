@@ -688,3 +688,47 @@ async def get_quick_responses():
             },
         ],
     }
+
+
+# ==================
+# CONVERSATIONAL NOTE-TAKING
+# ==================
+
+class ConverseRequest(BaseModel):
+    """Request for conversational note-taking with custom system prompt."""
+    system_prompt: str
+    messages: list[dict]  # [{role, content}, ...]
+    max_tokens: int = 200
+    temperature: float = 0.3
+
+
+class ConverseResponse(BaseModel):
+    response: str
+
+
+@router.post("/converse", response_model=ConverseResponse)
+async def converse(request: ConverseRequest, req: Request):
+    """Conversational chat with custom system prompt. Used for note-taking flow."""
+    llm_router = req.app.state.llm_router
+
+    llm_messages = [LLMMessage(role="system", content=request.system_prompt)]
+    for m in request.messages[-10:]:  # Last 10 messages for context
+        role = m.get("role", "user")
+        if role not in ("user", "assistant", "system"):
+            role = "user"
+        llm_messages.append(LLMMessage(role=role, content=m.get("content", "")))
+
+    try:
+        response = await llm_router.generate(
+            messages=llm_messages,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
+        )
+        text = response.content if hasattr(response, 'content') else str(response)
+        # Strip thinking tags
+        import re
+        text = re.sub(r'<think>[\s\S]*?</think>', '', text).strip()
+        return ConverseResponse(response=text)
+    except Exception as e:
+        logger.error(f"Converse LLM error: {e}")
+        return ConverseResponse(response="")
