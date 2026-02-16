@@ -698,37 +698,82 @@ class ConverseRequest(BaseModel):
     """Request for conversational note-taking with custom system prompt."""
     system_prompt: str
     messages: list[dict]  # [{role, content}, ...]
-    max_tokens: int = 200
+    max_tokens: int = 150
     temperature: float = 0.3
+    model: str = "fast"  # "fast" = 8b for conversation, "smart" = 80b for generation
 
 
 class ConverseResponse(BaseModel):
     response: str
 
 
+# Fast model for conversation (2-3s), smart model for SOAP generation (20-30s)
+FAST_MODEL = "llama3.1:8b"
+SMART_MODEL = "qwen3-next:80b"
+OLLAMA_URL = "http://192.168.68.127:11434"
+
+
 @router.post("/converse", response_model=ConverseResponse)
 async def converse(request: ConverseRequest, req: Request):
-    """Conversational chat with custom system prompt. Used for note-taking flow."""
-    llm_router = req.app.state.llm_router
+    """Conversational chat with custom system prompt. Used for note-taking flow.
 
-    llm_messages = [LLMMessage(role="system", content=request.system_prompt)]
-    for m in request.messages[-10:]:  # Last 10 messages for context
+    model="fast" → llama3.1:8b (~2-3s, for back-and-forth conversation)
+    model="smart" → qwen3-next:80b (~20s, for final SOAP generation)
+    """
+    import httpx
+
+    model = FAST_MODEL if request.model == "fast" else SMART_MODEL
+
+    ollama_messages = [{"role": "system", "content": request.system_prompt}]
+    for m in request.messages[-12:]:
         role = m.get("role", "user")
         if role not in ("user", "assistant", "system"):
             role = "user"
-        llm_messages.append(LLMMessage(role=role, content=m.get("content", "")))
+        ollama_messages.append({"role": role, "content": m.get("content", "")})
 
     try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            res = await client.post(
+                f"{OLLAMA_URL}/api/chat",
+                json={
+                    "model": model,
+                    "stream": False,
+                    "options": {
+                        "num_predict": request.max_tokens,
+                        "temperature": request.temperature,
+                    },
+                    "messages": ollama_messages,
+                },
+            )
+            if res.status_code == 200:
+                data = res.json()
+                text = data.get("message", {}).get("content", "")
+                # Strip thinking tags
+                import re
+                text = re.sub(r'<think>[\s\S]*?</think>', '', text).strip()
+                return ConverseResponse(response=text)
+    except Exception as e:
+        logger.error(f"Converse error ({model}): {e}")
+
+    # Fallback to built-in LLM router
+    try:
+        llm_router = req.app.state.llm_router
+        llm_messages = [LLMMessage(role="system", content=request.system_prompt)]
+        for m in request.messages[-10:]:
+            role = m.get("role", "user")
+            if role not in ("user", "assistant", "system"):
+                role = "user"
+            llm_messages.append(LLMMessage(role=role, content=m.get("content", "")))
+
         response = await llm_router.generate(
             messages=llm_messages,
             max_tokens=request.max_tokens,
             temperature=request.temperature,
         )
         text = response.content if hasattr(response, 'content') else str(response)
-        # Strip thinking tags
         import re
         text = re.sub(r'<think>[\s\S]*?</think>', '', text).strip()
         return ConverseResponse(response=text)
     except Exception as e:
-        logger.error(f"Converse LLM error: {e}")
+        logger.error(f"Converse fallback error: {e}")
         return ConverseResponse(response="")
