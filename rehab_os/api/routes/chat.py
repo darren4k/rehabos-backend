@@ -708,7 +708,7 @@ class ConverseResponse(BaseModel):
 
 
 # Fast model for conversation (2-3s), smart model for SOAP generation (20-30s)
-FAST_MODEL = "llama3.1:8b"
+FAST_MODEL = "qwen2.5:14b"
 SMART_MODEL = "qwen3-next:80b"
 OLLAMA_URL = "http://192.168.68.127:11434"
 
