@@ -334,6 +334,52 @@ async def list_available_voices():
     }
 
 
+@router.post("/tts")
+async def tts_proxy(request: TTSRequest):
+    """Proxy TTS request — tries Qwen3-TTS, falls back to Piper."""
+    client = get_tts_client()
+    text = request.text
+    if len(text) > 5000:
+        text = text[:5000]
+
+    speaker = client.SPEAKERS.get(request.voice_gender, "vivian")
+
+    # Try Qwen3-TTS first
+    try:
+        response = await client.client.post(
+            f"{client.server_url}/v1/audio/speech",
+            json={"input": text, "voice": speaker},
+            timeout=60.0,
+        )
+        if response.status_code == 200 and len(response.content) > 100:
+            return StreamingResponse(
+                io.BytesIO(response.content),
+                media_type="audio/wav",
+            )
+    except Exception as e:
+        logger.warning(f"Qwen3-TTS failed: {e}")
+
+    # Fallback to Piper on port 8180
+    piper_map = {"vivian": "amy", "ryan": "lessac", "ono_anna": "amy", "aiden": "lessac"}
+    piper_voice = piper_map.get(speaker, "amy")
+    try:
+        piper_url = client.server_url.rsplit(":", 1)[0] + ":8180"
+        response = await client.client.post(
+            f"{piper_url}/v1/audio/speech",
+            json={"input": text, "voice": piper_voice},
+            timeout=10.0,
+        )
+        if response.status_code == 200:
+            return StreamingResponse(
+                io.BytesIO(response.content),
+                media_type="audio/wav",
+            )
+    except Exception as e:
+        logger.warning(f"Piper fallback also failed: {e}")
+
+    raise HTTPException(status_code=503, detail="No TTS service available")
+
+
 @router.get("/setup-instructions")
 async def get_setup_instructions():
     """Get instructions for setting up Qwen3-TTS on DGX Spark."""

@@ -58,7 +58,7 @@ class Settings(BaseSettings):
 
     # Qwen3-TTS Voice Server (DGX Spark)
     tts_server_url: str = Field(
-        default="http://192.168.68.123:8080",
+        default="http://192.168.68.127:8080",
         description="URL for Qwen3-TTS server running on DGX Spark",
     )
     tts_enabled: bool = Field(
@@ -74,7 +74,7 @@ class Settings(BaseSettings):
 
     # API Settings
     api_host: str = Field(default="0.0.0.0")
-    api_port: int = Field(default=8080)
+    api_port: int = Field(default=8081)
     api_key: str = Field(
         default="",
         description="API key for authenticating requests",
@@ -82,7 +82,7 @@ class Settings(BaseSettings):
 
     # CORS
     cors_origins: list[str] = Field(
-        default=["http://localhost:3000", "http://localhost:8080"],
+        default=["http://localhost:3000", "http://localhost:8080", "http://localhost:8081", "http://localhost:8083"],
         description="Allowed CORS origins",
     )
 
