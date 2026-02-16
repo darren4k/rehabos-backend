@@ -146,7 +146,7 @@ class LLMRouter:
 
         with obs.llm_call(
             provider=llm.provider,
-            model=llm.model,
+            model=llm.model_name,
             messages=msg_dicts,
             temperature=temperature,
             max_tokens=max_tokens,
