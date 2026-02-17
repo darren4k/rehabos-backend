@@ -5,10 +5,11 @@ that understands clinical context and drives the documentation flow.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
@@ -58,7 +59,7 @@ class GenerateRequest(BaseModel):
 
 
 class GenerateResponse(BaseModel):
-    """Generated SOAP note."""
+    """Generated SOAP note with clinical intelligence."""
 
     encounter_id: str
     note_type: str
@@ -68,6 +69,11 @@ class GenerateResponse(BaseModel):
     compliance: dict = Field(default_factory=dict)
     billing_codes: list[dict] = Field(default_factory=list)
     word_count: int = 0
+    # Clinical intelligence (populated after SOAP generation)
+    defensibility: Optional[dict] = None
+    drug_warnings: Optional[dict] = None
+    evidence_suggestions: Optional[dict] = None
+    clinical_alerts: list[dict] = Field(default_factory=list)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -132,9 +138,15 @@ async def encounter_generate(req: GenerateRequest, request: Request):
 
     Uses the structured data collected by the Brain (not raw transcript)
     to produce a complete, Medicare-compliant clinical note.
+    After SOAP generation, runs clinical intelligence checks in parallel:
+    - Medicare defensibility audit
+    - Drug interaction check (if medications known)
+    - Evidence-based treatment suggestions
+    - Clinical alerts (trend detection)
     """
     if req.encounter_id not in _encounters:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail="Encounter not found")
 
     state = _encounters[req.encounter_id]
@@ -143,15 +155,32 @@ async def encounter_generate(req: GenerateRequest, request: Request):
     missing = state.missing_critical()
     if missing and not req.force:
         from fastapi import HTTPException
+
         raise HTTPException(
             status_code=400,
             detail=f"Missing critical items: {', '.join(missing)}. Set force=true to generate anyway.",
         )
 
     llm_router = request.app.state.llm_router
+    session_memory = getattr(request.app.state, "session_memory", None)
 
-    # Build structured transcript from encounter state for SOAP generation
+    # 1. Generate SOAP note from structured state
     note = await _generate_soap_from_state(state, llm_router)
+
+    # 2. Run clinical intelligence in parallel (non-blocking — failures don't kill the note)
+    intel = await _run_clinical_intelligence(state, note, llm_router, session_memory)
+    note.defensibility = intel.get("defensibility")
+    note.drug_warnings = intel.get("drug_warnings")
+    note.evidence_suggestions = intel.get("evidence_suggestions")
+    note.clinical_alerts = intel.get("clinical_alerts", [])
+
+    # Merge defensibility into compliance dict for backward compat
+    if note.defensibility:
+        note.compliance = {
+            "defensibility_score": note.defensibility.get("overall_score", 0),
+            "warnings": note.defensibility.get("warnings", []),
+            "failures": note.defensibility.get("failures", []),
+        }
 
     # Mark encounter complete
     state.phase = EncounterPhase.COMPLETE
@@ -174,6 +203,142 @@ async def clear_encounter(encounter_id: str):
     """Clear an encounter state."""
     _encounters.pop(encounter_id, None)
     return {"status": "cleared", "encounter_id": encounter_id}
+
+
+# ── Clinical Intelligence Pipeline ────────────────────────────────────────────
+
+
+async def _run_clinical_intelligence(
+    state: EncounterState,
+    note: GenerateResponse,
+    llm_router: Any,
+    session_memory: Any,
+) -> dict:
+    """Run clinical intelligence checks in parallel after SOAP generation.
+
+    Each check is independent — failures are logged but don't block the note.
+    Returns a dict with keys: defensibility, drug_warnings, evidence_suggestions, clinical_alerts.
+    """
+    results: dict[str, Any] = {}
+
+    # Build tasks list — only add checks that have enough data to be meaningful
+    tasks: dict[str, Any] = {}
+
+    # 1. Defensibility audit (always run — checks the generated SOAP)
+    tasks["defensibility"] = _check_defensibility(state, note, llm_router)
+
+    # 2. Drug interaction check (only if medications known)
+    if state.history.medications:
+        tasks["drug_warnings"] = _check_drugs(state.history.medications, llm_router)
+
+    # 3. Evidence-based suggestions (if we have diagnosis or interventions)
+    if state.history.diagnosis or state.objective.interventions:
+        tasks["evidence_suggestions"] = _check_evidence(state, note, llm_router)
+
+    # 4. Clinical alerts / trend detection (if patient has history)
+    if state.patient_id and session_memory:
+        tasks["clinical_alerts"] = _check_alerts(state, session_memory, llm_router)
+
+    if not tasks:
+        return results
+
+    # Run all checks in parallel
+    keys = list(tasks.keys())
+    outcomes = await asyncio.gather(*tasks.values(), return_exceptions=True)
+
+    for key, outcome in zip(keys, outcomes):
+        if isinstance(outcome, Exception):
+            logger.warning("Clinical intel '%s' failed: %s", key, outcome)
+        else:
+            results[key] = outcome
+
+    return results
+
+
+async def _check_defensibility(
+    state: EncounterState, note: GenerateResponse, llm_router: Any
+) -> dict:
+    """Run Medicare defensibility audit on the generated SOAP note."""
+    from rehab_os.clinical.defensibility import check_defensibility
+
+    note_content = note.sections
+    structured_data = note.clinical_data or {}
+    patient_context = {
+        "discipline": state.discipline,
+        "note_type": state.note_type or "daily_note",
+        "patient_name": state.patient_name,
+        "diagnosis": state.history.diagnosis,
+        "medications": state.history.medications,
+    }
+
+    result = await check_defensibility(
+        note_content=note_content,
+        note_type=state.note_type or "daily_note",
+        structured_data=structured_data,
+        patient_context=patient_context,
+        llm=llm_router,
+    )
+    return result.model_dump()
+
+
+async def _check_drugs(medications: list[str], llm_router: Any) -> dict:
+    """Check for drug interactions and rehab-relevant side effects."""
+    from rehab_os.clinical.drug_checker import check_drug_interactions
+
+    result = await check_drug_interactions(medications=medications, llm=llm_router)
+    return result.model_dump()
+
+
+async def _check_evidence(
+    state: EncounterState, note: GenerateResponse, llm_router: Any
+) -> dict:
+    """Suggest evidence-based treatments the therapist may have missed."""
+    from rehab_os.clinical.evidence_engine import suggest_evidence_based_treatments
+
+    current_interventions = [i.name for i in state.objective.interventions]
+    functional_deficits = []
+    if state.subjective.chief_complaint:
+        functional_deficits.append(state.subjective.chief_complaint)
+    patient_context = {
+        "discipline": state.discipline,
+        "patient_name": state.patient_name,
+    }
+
+    result = await suggest_evidence_based_treatments(
+        diagnosis=state.history.diagnosis,
+        current_interventions=current_interventions,
+        functional_deficits=functional_deficits,
+        patient_context=patient_context,
+        note_type=state.note_type or "daily_note",
+        llm=llm_router,
+    )
+    return result.model_dump()
+
+
+async def _check_alerts(
+    state: EncounterState, session_memory: Any, llm_router: Any
+) -> list[dict]:
+    """Detect clinical trends and alerts from longitudinal data."""
+    from rehab_os.clinical.chronic_management import check_for_alerts
+
+    current_snapshot = {
+        "medications": state.history.medications,
+        "symptoms": [state.subjective.chief_complaint] if state.subjective.chief_complaint else [],
+        "vitals": state.objective.vitals.model_dump() if state.objective.vitals else {},
+        "functional_status": {
+            "pain_level": state.subjective.pain_level,
+            "rom": [r.model_dump() for r in state.objective.rom],
+            "interventions": [i.name for i in state.objective.interventions],
+        },
+    }
+
+    alerts = await check_for_alerts(
+        patient_id=state.patient_id,
+        current_snapshot=current_snapshot,
+        memory_service=session_memory,
+        llm=llm_router,
+    )
+    return [a.model_dump() for a in alerts]
 
 
 # ── SOAP Generation from Structured State ─────────────────────────────────────
@@ -306,13 +471,52 @@ async def _generate_soap_from_state(
         "interventions": [i.model_dump() for i in state.objective.interventions],
     }
 
+    # Generate validated billing codes from structured state
+    from rehab_os.billing.engine import generate_billing
+
+    billing = generate_billing(
+        interventions=[i.model_dump() for i in state.objective.interventions],
+        diagnosis_list=state.history.diagnosis,
+        chief_complaint=state.subjective.chief_complaint,
+        pain_location=state.subjective.pain_location,
+        note_type=state.note_type or "daily_note",
+    )
+
+    # Use validated billing codes; fall back to LLM-parsed if billing engine produced none
+    billing_codes = [
+        {
+            "code": line.code,
+            "description": line.description,
+            "units": line.units,
+            "minutes": line.minutes,
+            "category": line.category,
+        }
+        for line in billing.cpt_lines
+        if line.units > 0
+    ] or parsed.get("billing_codes", [])
+
+    # Add ICD-10 codes to clinical_data
+    if billing.icd10_codes:
+        clinical_data["icd10_codes"] = [
+            {"code": s.code, "description": s.description, "confidence": s.confidence}
+            for s in billing.icd10_codes
+        ]
+
+    # Add billing warnings to compliance
+    billing_compliance = {}
+    if billing.warnings:
+        billing_compliance["billing_warnings"] = billing.warnings
+    billing_compliance["total_units"] = billing.total_units
+    billing_compliance["eight_minute_valid"] = billing.unit_validation.is_valid
+
     return GenerateResponse(
         encounter_id=state.encounter_id,
         note_type=state.note_type or "daily_note",
         content=content,
         sections=sections,
         clinical_data=clinical_data,
-        billing_codes=parsed.get("billing_codes", []),
+        compliance=billing_compliance,
+        billing_codes=billing_codes,
         word_count=len(content.split()),
     )
 
