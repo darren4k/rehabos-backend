@@ -189,8 +189,8 @@ class ClinicalNote(Base):
 
     # Metadata
     transcript: Mapped[str | None] = mapped_column(Text)
-    compliance_score: Mapped[float | None] = mapped_column(Integer)  # stored as int, interpreted as float
-    compliance_warnings: Mapped[dict | None] = mapped_column(JSON)
+    compliance_score: Mapped[int | None] = mapped_column(Integer)
+    compliance_warnings: Mapped[list | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(20), default="final")  # draft, final
 
     # EMR sync
