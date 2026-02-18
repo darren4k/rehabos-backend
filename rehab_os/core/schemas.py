@@ -9,6 +9,28 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
+# --- Organization ---
+
+class OrganizationCreate(BaseModel):
+    name: str
+    slug: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+
+
+class OrganizationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    slug: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 # --- Patient ---
 
 class PatientCreate(BaseModel):
@@ -21,6 +43,8 @@ class PatientCreate(BaseModel):
     address: Optional[str] = None
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
+    organization_id: Optional[uuid.UUID] = None
+    primary_therapist_id: Optional[uuid.UUID] = None
 
 
 class PatientUpdate(BaseModel):
@@ -32,6 +56,8 @@ class PatientUpdate(BaseModel):
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
     active: Optional[bool] = None
+    organization_id: Optional[uuid.UUID] = None
+    primary_therapist_id: Optional[uuid.UUID] = None
 
 
 class PatientRead(BaseModel):
@@ -47,6 +73,8 @@ class PatientRead(BaseModel):
     address: Optional[str] = None
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
+    organization_id: Optional[uuid.UUID] = None
+    primary_therapist_id: Optional[uuid.UUID] = None
     created_at: datetime
     updated_at: datetime
     active: bool
@@ -58,6 +86,8 @@ class PatientRead(BaseModel):
 
 class ClinicalNoteCreate(BaseModel):
     patient_id: uuid.UUID
+    therapist_id: Optional[uuid.UUID] = None
+    organization_id: Optional[uuid.UUID] = None
     note_type: str  # evaluation, daily_note, progress_note, recertification, discharge_summary
     note_date: date
     discipline: str = "pt"
@@ -79,6 +109,7 @@ class ClinicalNoteUpdate(BaseModel):
     note_type: Optional[str] = None
     note_date: Optional[date] = None
     discipline: Optional[str] = None
+    therapist_id: Optional[uuid.UUID] = None
     therapist_name: Optional[str] = None
     soap_subjective: Optional[str] = None
     soap_objective: Optional[str] = None
@@ -98,6 +129,8 @@ class ClinicalNoteRead(BaseModel):
 
     id: uuid.UUID
     patient_id: uuid.UUID
+    therapist_id: Optional[uuid.UUID] = None
+    organization_id: Optional[uuid.UUID] = None
     note_type: str
     note_date: date
     discipline: str
@@ -195,7 +228,9 @@ class ProviderCreate(BaseModel):
     credentials: Optional[str] = None
     npi: Optional[str] = None
     discipline: str
+    role: str = "therapist"
     email: Optional[str] = None
+    organization_id: Optional[uuid.UUID] = None
 
 
 class ProviderRead(BaseModel):
@@ -207,7 +242,9 @@ class ProviderRead(BaseModel):
     credentials: Optional[str] = None
     npi: Optional[str] = None
     discipline: str
+    role: str = "therapist"
     email: Optional[str] = None
+    organization_id: Optional[uuid.UUID] = None
     active: bool
 
 

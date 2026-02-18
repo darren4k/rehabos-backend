@@ -9,6 +9,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Enum as SAEnum,
     ForeignKey,
     Index,
     Integer,
@@ -20,6 +21,8 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+import enum
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -29,14 +32,40 @@ def _new_uuid() -> uuid.UUID:
     return uuid.uuid4()
 
 
+class ProviderRole(str, enum.Enum):
+    """Role within an organization."""
+    owner = "owner"
+    admin = "admin"
+    therapist = "therapist"
+    assistant = "assistant"
+
+
 class Base(DeclarativeBase):
     pass
+
+
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=_new_uuid)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    slug: Mapped[str | None] = mapped_column(String(100), unique=True)
+    phone: Mapped[str | None] = mapped_column(String(20))
+    address: Mapped[str | None] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    providers: Mapped[list[Provider]] = relationship(back_populates="organization", lazy="selectin")
+    patients: Mapped[list[Patient]] = relationship(back_populates="organization", lazy="selectin")
 
 
 class Patient(Base):
     __tablename__ = "patients"
 
     id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=_new_uuid)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"))
+    primary_therapist_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("providers.id", ondelete="SET NULL"))
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     dob: Mapped[date] = mapped_column(Date, nullable=False)
@@ -50,6 +79,8 @@ class Patient(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    organization: Mapped[Organization | None] = relationship(back_populates="patients")
+    primary_therapist: Mapped[Provider | None] = relationship(foreign_keys=[primary_therapist_id])
     insurance_records: Mapped[list[Insurance]] = relationship(back_populates="patient", lazy="selectin")
     encounters: Mapped[list[Encounter]] = relationship(back_populates="patient", lazy="selectin")
     referrals: Mapped[list[Referral]] = relationship(back_populates="patient", lazy="selectin")
@@ -60,6 +91,8 @@ class Patient(Base):
         Index("ix_patients_last_name", "last_name"),
         Index("ix_patients_dob", "dob"),
         Index("ix_patients_active", "active"),
+        Index("ix_patients_organization_id", "organization_id"),
+        Index("ix_patients_primary_therapist_id", "primary_therapist_id"),
     )
 
 
@@ -90,17 +123,24 @@ class Provider(Base):
     __tablename__ = "providers"
 
     id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=_new_uuid)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"))
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     credentials: Mapped[str | None] = mapped_column(String(50))
     npi: Mapped[str | None] = mapped_column(String(10), unique=True)
     discipline: Mapped[str] = mapped_column(String(10), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), default="therapist")
     email: Mapped[str | None] = mapped_column(String(255))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    organization: Mapped[Organization | None] = relationship(back_populates="providers")
     encounters: Mapped[list[Encounter]] = relationship(back_populates="provider", lazy="selectin")
     appointments: Mapped[list[AppointmentDB]] = relationship(back_populates="provider", lazy="selectin")
     availability_rules: Mapped[list[ProviderAvailability]] = relationship(back_populates="provider", lazy="selectin")
+
+    __table_args__ = (
+        Index("ix_providers_organization_id", "organization_id"),
+    )
 
 
 class Encounter(Base):
@@ -177,6 +217,8 @@ class ClinicalNote(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=_new_uuid)
     patient_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False)
+    therapist_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("providers.id", ondelete="SET NULL"))
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"))
     note_type: Mapped[str] = mapped_column(String(50), nullable=False)  # evaluation, daily_note, progress_note, recertification, discharge_summary
     note_date: Mapped[date] = mapped_column(Date, nullable=False)
     discipline: Mapped[str] = mapped_column(String(10), default="pt")
@@ -205,11 +247,14 @@ class ClinicalNote(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
     patient: Mapped[Patient] = relationship(back_populates="clinical_notes")
+    therapist: Mapped[Provider | None] = relationship(foreign_keys=[therapist_id])
 
     __table_args__ = (
         Index("ix_clinical_notes_patient_id", "patient_id"),
         Index("ix_clinical_notes_note_date", "note_date"),
         Index("ix_clinical_notes_note_type", "note_type"),
+        Index("ix_clinical_notes_therapist_id", "therapist_id"),
+        Index("ix_clinical_notes_organization_id", "organization_id"),
     )
 
 
@@ -219,6 +264,7 @@ class AppointmentDB(Base):
     id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=_new_uuid)
     patient_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False)
     provider_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("providers.id", ondelete="SET NULL"), nullable=False)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"))
     encounter_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("encounters.id", ondelete="SET NULL"))
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -242,6 +288,7 @@ class AppointmentDB(Base):
         Index("ix_appointments_start_time", "start_time"),
         Index("ix_appointments_status", "status"),
         Index("ix_appointments_provider_start", "provider_id", "start_time"),
+        Index("ix_appointments_organization_id", "organization_id"),
     )
 
 

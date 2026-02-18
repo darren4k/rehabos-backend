@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from rehab_os import __version__
 from rehab_os.api.middleware import APIKeyMiddleware, RequestLoggingMiddleware
-from rehab_os.api.routes import consult, agents, health, feedback, sessions, streaming, mobile, knowledge, analyze, compliance, programs, scholar, chat, extract, notes, voice, intake, scheduling, patients, history, clinical_intel, documents, docpilot, encounter, export
+from rehab_os.api.routes import consult, agents, health, feedback, sessions, streaming, mobile, knowledge, analyze, compliance, programs, scholar, chat, extract, notes, voice, intake, scheduling, patients, history, clinical_intel, documents, docpilot, encounter, export, dashboard, team, me
 from rehab_os.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -127,6 +127,9 @@ def create_app() -> FastAPI:
     app.include_router(docpilot.router, prefix="/api/v1", tags=["docpilot"])
     app.include_router(encounter.router, prefix="/api/v1", tags=["encounter"])
     app.include_router(export.router, prefix="/api/v1", tags=["export"])
+    app.include_router(dashboard.router, prefix="/api/v1", tags=["dashboard"])
+    app.include_router(team.router, prefix="/api/v1", tags=["team"])
+    app.include_router(me.router, prefix="/api/v1", tags=["me"])
 
     # Exception handlers
     @app.exception_handler(Exception)
