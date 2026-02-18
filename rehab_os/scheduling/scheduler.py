@@ -77,8 +77,16 @@ class SchedulingService:
         provider_id: str,
         date_range: tuple[date, date],
         existing_appointments: list[Appointment],
+        availability_rules: list[dict] | None = None,
     ) -> list[TimeSlot]:
-        """Return open slots across *date_range* after removing booked ones."""
+        """Return open slots across *date_range* after removing booked ones.
+
+        When *availability_rules* is provided, each dict should have keys:
+        ``day_of_week`` (0=Mon..6=Sun), ``start_hour``, ``end_hour``,
+        ``slot_duration_minutes``, ``is_available``.  Days without a rule or
+        with ``is_available=False`` are skipped.  When ``None``, the default
+        behaviour (weekdays 8-17, 45-min slots) is used.
+        """
         start_date, end_date = date_range
         booked_intervals: set[tuple[datetime, datetime]] = set()
         for appt in existing_appointments:
@@ -91,13 +99,37 @@ class SchedulingService:
                     (appt.time_slot.start_time, appt.time_slot.end_time)
                 )
 
+        # Index rules by day_of_week if provided
+        rules_by_day: dict[int, dict] | None = None
+        if availability_rules is not None:
+            rules_by_day = {r["day_of_week"]: r for r in availability_rules}
+
         available: list[TimeSlot] = []
         current_date = start_date
         while current_date <= end_date:
-            if current_date.weekday() < 5:  # skip weekends
-                for slot in self.generate_provider_slots(provider_id, current_date):
-                    if (slot.start_time, slot.end_time) not in booked_intervals:
-                        available.append(slot)
+            wd = current_date.weekday()
+            if rules_by_day is not None:
+                rule = rules_by_day.get(wd)
+                if rule is None or not rule.get("is_available", True):
+                    current_date += timedelta(days=1)
+                    continue
+                day_start = rule.get("start_hour", 8)
+                day_end = rule.get("end_hour", 17)
+                slot_min = rule.get("slot_duration_minutes", self.default_slot_minutes)
+            else:
+                if wd >= 5:  # skip weekends
+                    current_date += timedelta(days=1)
+                    continue
+                day_start = 8
+                day_end = 17
+                slot_min = self.default_slot_minutes
+
+            for slot in self.generate_provider_slots(
+                provider_id, current_date,
+                start_hour=day_start, end_hour=day_end, slot_minutes=slot_min,
+            ):
+                if (slot.start_time, slot.end_time) not in booked_intervals:
+                    available.append(slot)
             current_date += timedelta(days=1)
         return available
 

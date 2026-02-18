@@ -6,10 +6,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional, Sequence
 
-from sqlalchemy import select, or_
+from sqlalchemy import and_, delete, func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rehab_os.core.models import (
+    AppointmentDB,
     AuditLog,
     BillingRecord,
     ClinicalNote,
@@ -17,6 +18,7 @@ from rehab_os.core.models import (
     Insurance,
     Patient,
     Provider,
+    ProviderAvailability,
     Referral,
 )
 
@@ -277,3 +279,170 @@ class AuditRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalars().all()
+
+
+class AppointmentRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(self, **kwargs) -> AppointmentDB:
+        appt = AppointmentDB(**kwargs)
+        self.session.add(appt)
+        await self.session.flush()
+        return appt
+
+    async def get_by_id(self, appointment_id: uuid.UUID) -> Optional[AppointmentDB]:
+        return await self.session.get(AppointmentDB, appointment_id)
+
+    async def list_by_provider_date_range(
+        self,
+        provider_id: uuid.UUID,
+        start: datetime,
+        end: datetime,
+        exclude_statuses: Optional[list[str]] = None,
+    ) -> Sequence[AppointmentDB]:
+        stmt = select(AppointmentDB).where(
+            AppointmentDB.provider_id == provider_id,
+            AppointmentDB.start_time >= start,
+            AppointmentDB.start_time <= end,
+        )
+        if exclude_statuses:
+            stmt = stmt.where(AppointmentDB.status.notin_(exclude_statuses))
+        stmt = stmt.order_by(AppointmentDB.start_time)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def list_by_patient(self, patient_id: uuid.UUID, limit: int = 50) -> Sequence[AppointmentDB]:
+        stmt = (
+            select(AppointmentDB)
+            .where(AppointmentDB.patient_id == patient_id)
+            .order_by(AppointmentDB.start_time.desc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def list_by_date(
+        self, target_date: datetime, provider_id: Optional[uuid.UUID] = None
+    ) -> Sequence[AppointmentDB]:
+        day_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        stmt = select(AppointmentDB).where(
+            AppointmentDB.start_time >= day_start,
+            AppointmentDB.start_time <= day_end,
+        )
+        if provider_id:
+            stmt = stmt.where(AppointmentDB.provider_id == provider_id)
+        stmt = stmt.order_by(AppointmentDB.start_time)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def update(self, appointment_id: uuid.UUID, **kwargs) -> Optional[AppointmentDB]:
+        appt = await self.get_by_id(appointment_id)
+        if not appt:
+            return None
+        for k, v in kwargs.items():
+            if v is not None:
+                setattr(appt, k, v)
+        appt.updated_at = datetime.now(timezone.utc)
+        await self.session.flush()
+        return appt
+
+    async def cancel(self, appointment_id: uuid.UUID, reason: Optional[str] = None) -> Optional[AppointmentDB]:
+        appt = await self.get_by_id(appointment_id)
+        if not appt:
+            return None
+        appt.status = "cancelled"
+        appt.cancel_reason = reason
+        appt.updated_at = datetime.now(timezone.utc)
+        await self.session.flush()
+        return appt
+
+    async def check_conflict(
+        self,
+        provider_id: uuid.UUID,
+        start: datetime,
+        end: datetime,
+        exclude_id: Optional[uuid.UUID] = None,
+    ) -> bool:
+        stmt = select(func.count()).select_from(AppointmentDB).where(
+            AppointmentDB.provider_id == provider_id,
+            AppointmentDB.status.notin_(["cancelled", "no_show"]),
+            AppointmentDB.start_time < end,
+            AppointmentDB.end_time > start,
+        )
+        if exclude_id:
+            stmt = stmt.where(AppointmentDB.id != exclude_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one() > 0
+
+    async def count_by_patient_discipline(self, patient_id: uuid.UUID, discipline: str) -> int:
+        stmt = select(func.count()).select_from(AppointmentDB).where(
+            AppointmentDB.patient_id == patient_id,
+            AppointmentDB.discipline == discipline,
+            AppointmentDB.status.in_(["completed", "checked_in"]),
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one()
+
+
+class ProviderAvailabilityRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(self, **kwargs) -> ProviderAvailability:
+        avail = ProviderAvailability(**kwargs)
+        self.session.add(avail)
+        await self.session.flush()
+        return avail
+
+    async def get_by_provider(self, provider_id: uuid.UUID) -> Sequence[ProviderAvailability]:
+        stmt = (
+            select(ProviderAvailability)
+            .where(ProviderAvailability.provider_id == provider_id)
+            .order_by(ProviderAvailability.day_of_week)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def get_for_day(
+        self, provider_id: uuid.UUID, day_of_week: int, target_date: Optional[datetime] = None
+    ) -> Sequence[ProviderAvailability]:
+        stmt = select(ProviderAvailability).where(
+            ProviderAvailability.provider_id == provider_id,
+            ProviderAvailability.day_of_week == day_of_week,
+        )
+        if target_date:
+            d = target_date.date() if isinstance(target_date, datetime) else target_date
+            stmt = stmt.where(
+                or_(ProviderAvailability.effective_date.is_(None), ProviderAvailability.effective_date <= d),
+                or_(ProviderAvailability.expiry_date.is_(None), ProviderAvailability.expiry_date >= d),
+            )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def upsert(self, provider_id: uuid.UUID, day_of_week: int, **kwargs) -> ProviderAvailability:
+        stmt = select(ProviderAvailability).where(
+            ProviderAvailability.provider_id == provider_id,
+            ProviderAvailability.day_of_week == day_of_week,
+        )
+        if "effective_date" in kwargs and kwargs["effective_date"] is not None:
+            stmt = stmt.where(ProviderAvailability.effective_date == kwargs["effective_date"])
+        else:
+            stmt = stmt.where(ProviderAvailability.effective_date.is_(None))
+        result = await self.session.execute(stmt)
+        existing = result.scalar_one_or_none()
+        if existing:
+            for k, v in kwargs.items():
+                setattr(existing, k, v)
+            await self.session.flush()
+            return existing
+        return await self.create(provider_id=provider_id, day_of_week=day_of_week, **kwargs)
+
+    async def delete_by_id(self, avail_id: uuid.UUID) -> bool:
+        avail = await self.session.get(ProviderAvailability, avail_id)
+        if not avail:
+            return False
+        await self.session.delete(avail)
+        await self.session.flush()
+        return True

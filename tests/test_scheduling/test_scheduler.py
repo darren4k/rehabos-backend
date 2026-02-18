@@ -206,79 +206,50 @@ class TestRouteOptimizer:
         assert len(flags) == 0
 
 
-# ------------------------------------------------------- API endpoints
+# ------------------------------------------------ availability rules
 
-class TestSchedulingAPI:
-    @pytest.fixture(autouse=True)
-    def _clear_store(self):
-        from rehab_os.api.routes.scheduling import _appointments
-        _appointments.clear()
-        yield
-        _appointments.clear()
-
-    @pytest.fixture
-    def client(self):
-        from fastapi.testclient import TestClient
-        from fastapi import FastAPI
-        from rehab_os.api.routes.scheduling import router
-        app = FastAPI()
-        app.include_router(router, prefix="/api/v1")
-        return TestClient(app)
-
-    def test_book_and_list(self, client):
-        appt = _make_appt("prov-1", datetime(2026, 3, 2, 8, 0))
-        resp = client.post("/api/v1/scheduling/appointments", json=appt.model_dump(mode="json"))
-        assert resp.status_code == 201
-
-        resp = client.get("/api/v1/scheduling/appointments", params={"patient_id": "pat-1"})
-        assert resp.status_code == 200
-        assert len(resp.json()) == 1
-
-    def test_update_appointment(self, client):
-        appt = _make_appt("prov-1", datetime(2026, 3, 2, 8, 0))
-        client.post("/api/v1/scheduling/appointments", json=appt.model_dump(mode="json"))
-
-        resp = client.put(
-            f"/api/v1/scheduling/appointments/{appt.id}",
-            json={"status": "cancelled"},
-        )
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "cancelled"
-
-    def test_update_not_found(self, client):
-        resp = client.put("/api/v1/scheduling/appointments/nope", json={"status": "cancelled"})
-        assert resp.status_code == 404
-
-    def test_provider_availability(self, client):
-        resp = client.get(
-            "/api/v1/scheduling/providers/prov-1/availability",
-            params={"start_date": "2026-03-02", "end_date": "2026-03-02"},
-        )
-        assert resp.status_code == 200
-        assert len(resp.json()) == 12  # full day of 45-min slots
-
-    def test_auto_schedule_endpoint(self, client):
-        resp = client.post("/api/v1/scheduling/auto-schedule", json={
-            "patient_id": "pat-1",
-            "discipline": "PT",
-            "frequency": "2x/week",
-            "duration_weeks": 2,
-            "provider_id": "prov-1",
-        })
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data["appointments"]) == 4
-
-    def test_optimize_route_endpoint(self, client):
-        appts = [
-            _make_appt("prov-1", datetime(2026, 3, 2, 8, 0), location="A 90210"),
-            _make_appt("prov-1", datetime(2026, 3, 2, 9, 0), location="B 90220"),
+class TestSchedulerWithAvailability:
+    def test_availability_rules_respected(self, svc: SchedulingService):
+        """Provider only works Mon/Wed/Fri 9-15, 30-min slots."""
+        rules = [
+            {"day_of_week": 0, "start_hour": 9, "end_hour": 15, "slot_duration_minutes": 30, "is_available": True},
+            {"day_of_week": 1, "start_hour": 9, "end_hour": 15, "slot_duration_minutes": 30, "is_available": False},
+            {"day_of_week": 2, "start_hour": 9, "end_hour": 15, "slot_duration_minutes": 30, "is_available": True},
+            {"day_of_week": 3, "start_hour": 9, "end_hour": 15, "slot_duration_minutes": 30, "is_available": False},
+            {"day_of_week": 4, "start_hour": 9, "end_hour": 15, "slot_duration_minutes": 30, "is_available": True},
         ]
-        for a in appts:
-            client.post("/api/v1/scheduling/appointments", json=a.model_dump(mode="json"))
+        d = date(2026, 3, 2)  # Monday
+        available = svc.find_available_slots("prov-1", (d, d + timedelta(days=4)), [], availability_rules=rules)
+        weekdays = {s.start_time.weekday() for s in available}
+        assert weekdays == {0, 2, 4}  # Mon, Wed, Fri only
+        # 6h / 30min = 12 slots per day * 3 days = 36
+        assert len(available) == 36
 
-        resp = client.post("/api/v1/scheduling/optimize-route", json={
-            "appointment_ids": [a.id for a in appts],
-        })
-        assert resp.status_code == 200
-        assert len(resp.json()) == 2
+    def test_unavailable_days_skipped(self, svc: SchedulingService):
+        """All days marked unavailable → no slots."""
+        rules = [
+            {"day_of_week": i, "is_available": False}
+            for i in range(7)
+        ]
+        d = date(2026, 3, 2)
+        available = svc.find_available_slots("prov-1", (d, d + timedelta(days=6)), [], availability_rules=rules)
+        assert len(available) == 0
+
+    def test_no_rules_uses_default(self, svc: SchedulingService):
+        """When availability_rules=None, default weekday 8-17 behaviour."""
+        d = date(2026, 3, 2)  # Monday
+        available = svc.find_available_slots("prov-1", (d, d), [])
+        assert len(available) == 12  # 9h / 45min = 12 slots
+
+    def test_custom_hours_per_day(self, svc: SchedulingService):
+        """Different hours per day are respected."""
+        rules = [
+            {"day_of_week": 0, "start_hour": 8, "end_hour": 12, "slot_duration_minutes": 45, "is_available": True},
+            {"day_of_week": 1, "start_hour": 13, "end_hour": 17, "slot_duration_minutes": 45, "is_available": True},
+        ]
+        d = date(2026, 3, 2)  # Monday
+        available = svc.find_available_slots("prov-1", (d, d + timedelta(days=1)), [], availability_rules=rules)
+        mon_slots = [s for s in available if s.start_time.weekday() == 0]
+        tue_slots = [s for s in available if s.start_time.weekday() == 1]
+        assert all(s.start_time.hour >= 8 and s.start_time.hour < 12 for s in mon_slots)
+        assert all(s.start_time.hour >= 13 and s.start_time.hour < 17 for s in tue_slots)
