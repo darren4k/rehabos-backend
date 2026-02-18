@@ -37,6 +37,7 @@ dependencies = [
     "psycopg[binary]>=3.1",
     "memu-py>=0.1",
     "pymupdf>=1.24",
+    "fpdf2>=2.7",
 ]
 
 [project.optional-dependencies]
