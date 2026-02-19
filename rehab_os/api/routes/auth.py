@@ -206,6 +206,9 @@ async def invite_provider(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
 
+    if len(body.temp_password) < 8:
+        raise HTTPException(status_code=400, detail="Temporary password must be at least 8 characters")
+
     provider = Provider(
         first_name=body.first_name,
         last_name=body.last_name,
@@ -236,11 +239,15 @@ async def invite_provider(
 @router.post("/change-password")
 async def change_password(
     body: ChangePasswordRequest,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: Provider = Depends(get_current_user),
 ) -> dict:
     if not current_user.password_hash:
         raise HTTPException(status_code=400, detail="No password set")
+
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
 
     if not verify_password(body.current_password, current_user.password_hash):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
@@ -248,5 +255,10 @@ async def change_password(
     current_user.password_hash = hash_password(body.new_password)
     current_user.must_change_password = False
     await db.flush()
+
+    # Reissue tokens so claims (role, etc.) are fresh
+    access = create_access_token(str(current_user.id), current_user.role)
+    refresh = create_refresh_token(str(current_user.id))
+    set_auth_cookies(response, access, refresh)
 
     return {"ok": True}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import uuid
 
 from fastapi import Depends, HTTPException, Request
@@ -56,7 +57,7 @@ async def get_current_user(
         elif api_key_header:
             provided_key = api_key_header
 
-        if provided_key and provided_key == settings.api_key:
+        if provided_key and hmac.compare_digest(provided_key, settings.api_key):
             # Machine client must supply X-Provider-Id
             provider_id_str = request.headers.get("X-Provider-Id")
             if provider_id_str:

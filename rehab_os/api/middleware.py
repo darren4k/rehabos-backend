@@ -1,5 +1,6 @@
 """API middleware for authentication and logging."""
 
+import hmac
 import logging
 import time
 from typing import Callable
@@ -71,7 +72,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         elif api_key_header:
             provided_key = api_key_header
 
-        if not provided_key or provided_key != self.api_key:
+        if not provided_key or not hmac.compare_digest(provided_key, self.api_key):
             logger.warning(
                 f"Unauthorized request: {request.method} {request.url.path} "
                 f"client={request.client.host if request.client else 'unknown'}"
