@@ -522,16 +522,19 @@ async def analyze_patient(patient: PatientData):
     )
 
 
+class QuickAnalysisRequest(BaseModel):
+    diagnoses: list[str]
+    age: int = 65
+    discipline: str = "PT"
+
+
 @router.post("/quick-analysis")
-async def quick_analysis(
-    diagnoses: list[str],
-    age: int = 65,
-    discipline: str = "PT",
-):
+async def quick_analysis(body: QuickAnalysisRequest):
     """Quick analysis based on diagnoses only.
 
     Use this for rapid lookup without full patient context.
     """
+    diagnoses = body.diagnoses
     protocols = get_matching_protocols(diagnoses, None)
 
     if not protocols:

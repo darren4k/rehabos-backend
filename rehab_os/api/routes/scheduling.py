@@ -79,6 +79,13 @@ class CancelRequest(BaseModel):
     reason: str | None = None
 
 
+class AutoScheduleResponse(BaseModel):
+    appointments: list[AppointmentResponse] = []
+    conflicts: list[str] = []
+    optimization_notes: list[str] = []
+    next_available: datetime | None = None
+
+
 class RouteRequest(BaseModel):
     appointment_ids: list[str]
     provider_home_address: str | None = None
@@ -523,11 +530,11 @@ async def insurance_check(
 # Auto-schedule
 # ---------------------------------------------------------------------------
 
-@router.post("/auto-schedule", response_model=ScheduleResult)
+@router.post("/auto-schedule", response_model=AutoScheduleResponse)
 async def auto_schedule(
     request: ScheduleRequest,
     db: AsyncSession = Depends(get_db),
-) -> ScheduleResult:
+) -> AutoScheduleResponse:
     """Auto-schedule a series of appointments and persist to DB."""
     provider_id_str = request.provider_id or "default-provider"
     appt_repo = AppointmentRepository(db)
@@ -565,16 +572,17 @@ async def auto_schedule(
     )
     result = _scheduler.auto_schedule(request, available)
 
-    # Persist to DB
+    # Persist to DB and collect flat responses
     patient_id = _parse_uuid(request.patient_id, "patient_id")
     insurance_warning = await _check_insurance(db, patient_id, request.discipline)
+    flat_appointments: list[AppointmentResponse] = []
 
     for appt in result.appointments:
         try:
             prov_id = uuid.UUID(appt.provider_id)
         except ValueError:
             continue
-        await appt_repo.create(
+        db_appt = await appt_repo.create(
             patient_id=patient_id,
             provider_id=prov_id,
             start_time=appt.time_slot.start_time.replace(tzinfo=timezone.utc) if appt.time_slot.start_time.tzinfo is None else appt.time_slot.start_time,
@@ -584,11 +592,18 @@ async def auto_schedule(
             location=appt.time_slot.location,
             is_auto_scheduled=True,
         )
+        flat_appointments.append(_appt_to_response(db_appt, insurance_warning))
 
+    optimization_notes = list(result.optimization_notes)
     if insurance_warning:
-        result.optimization_notes.append(f"Insurance warning: {insurance_warning}")
+        optimization_notes.append(f"Insurance warning: {insurance_warning}")
 
-    return result
+    return AutoScheduleResponse(
+        appointments=flat_appointments,
+        conflicts=result.conflicts,
+        optimization_notes=optimization_notes,
+        next_available=result.next_available,
+    )
 
 
 # ---------------------------------------------------------------------------

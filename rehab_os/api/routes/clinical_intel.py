@@ -21,7 +21,7 @@ from rehab_os.clinical.chronic_management import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/clinical")
+router = APIRouter(prefix="/clinical-intelligence")
 
 
 # ---------------------------------------------------------------------------
