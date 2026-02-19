@@ -1,7 +1,7 @@
 """Tests for Clinical Note CRUD endpoints."""
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -56,7 +56,7 @@ class TestClinicalNoteSchemas:
         assert schema.note_type is None
 
     def test_read_schema(self):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         schema = ClinicalNoteRead(
             id=uuid.uuid4(),
             patient_id=uuid.uuid4(),

@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from rehab_os.observability.analytics import (
@@ -24,7 +24,7 @@ def temp_log_dir(tmp_path):
 @pytest.fixture
 def sample_agent_events():
     """Sample agent events for testing."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     return [
         {
             "event_type": "agent_success",
@@ -73,7 +73,7 @@ def sample_agent_events():
 @pytest.fixture
 def sample_llm_events():
     """Sample LLM call events for testing."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     return [
         {
             "event_type": "llm_call_success",
@@ -296,8 +296,8 @@ class TestPromptAnalytics:
     def test_time_filtering(self, temp_log_dir):
         """Test time-based filtering of events."""
         # Create events at different times
-        old_time = (datetime.utcnow() - timedelta(days=10)).isoformat()
-        recent_time = datetime.utcnow().isoformat()
+        old_time = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+        recent_time = datetime.now(timezone.utc).isoformat()
 
         events = [
             {"event_type": "agent_success", "timestamp": old_time, "agent_name": "old"},
@@ -311,7 +311,7 @@ class TestPromptAnalytics:
         analytics = PromptAnalytics(temp_log_dir)
 
         # Filter to last 7 days
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         start_time = end_time - timedelta(days=7)
         metrics = analytics.compute_agent_metrics(start_time, end_time)
 

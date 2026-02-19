@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 
-class TestCase(BaseModel):
+class EvalTestCase(BaseModel):
     """A test case for agent evaluation."""
 
     id: str
@@ -170,9 +170,9 @@ class AgentEvaluator:
         self.results_dir = results_dir or Path("data/evaluation_results")
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
-        self._test_cases: dict[str, list[TestCase]] = {}
+        self._test_cases: dict[str, list[EvalTestCase]] = {}
 
-    def load_test_suite(self, suite_name: str) -> list[TestCase]:
+    def load_test_suite(self, suite_name: str) -> list[EvalTestCase]:
         """Load test cases from a suite file."""
         if suite_name in self._test_cases:
             return self._test_cases[suite_name]
@@ -187,7 +187,7 @@ class AgentEvaluator:
             for line in f:
                 try:
                     data = json.loads(line)
-                    cases.append(TestCase(**data))
+                    cases.append(EvalTestCase(**data))
                 except (json.JSONDecodeError, ValueError) as e:
                     logger.warning(f"Failed to load test case: {e}")
 
@@ -197,7 +197,7 @@ class AgentEvaluator:
     def create_test_suite(
         self,
         suite_name: str,
-        cases: list[TestCase],
+        cases: list[EvalTestCase],
     ) -> None:
         """Create a new test suite."""
         suite_file = self.test_suites_dir / f"{suite_name}.jsonl"
@@ -261,7 +261,7 @@ class AgentEvaluator:
     async def _evaluate_single(
         self,
         agent: Any,
-        case: TestCase,
+        case: EvalTestCase,
         prompt_version: str,
     ) -> EvaluationResult:
         """Evaluate a single test case."""

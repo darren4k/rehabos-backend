@@ -83,7 +83,7 @@ def _apply_scope(
 
 @router.get("/metrics", response_model=DashboardMetrics)
 async def get_dashboard_metrics(
-    scope: str = Query("org", regex="^(me|org)$"),
+    scope: str = Query("org", pattern="^(me|org)$"),
     therapist_id: Optional[uuid.UUID] = Query(None),
     organization_id: Optional[uuid.UUID] = Query(None),
     db: AsyncSession = Depends(get_db),

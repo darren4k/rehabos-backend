@@ -16,7 +16,7 @@ from rehab_os.learning.evaluator import (
     AgentEvaluator,
     EvaluationRun,
     EvaluationResult,
-    TestCase,
+    EvalTestCase,
     ABTestConfig,
 )
 from rehab_os.learning.scheduler import (
@@ -199,13 +199,13 @@ class TestAgentEvaluator:
         )
 
         cases = [
-            TestCase(
+            EvalTestCase(
                 id="test-001",
                 agent_name="diagnosis",
                 input_data={"patient": {"age": 55}},
                 required_fields=["primary_diagnosis"],
             ),
-            TestCase(
+            EvalTestCase(
                 id="test-002",
                 agent_name="diagnosis",
                 input_data={"patient": {"age": 30}},
