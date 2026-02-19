@@ -132,6 +132,8 @@ class Provider(Base):
     role: Mapped[str] = mapped_column(String(20), default="therapist")
     email: Mapped[str | None] = mapped_column(String(255))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255))
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
 
     organization: Mapped[Organization | None] = relationship(back_populates="providers")
     encounters: Mapped[list[Encounter]] = relationship(back_populates="provider", lazy="selectin")
@@ -140,6 +142,7 @@ class Provider(Base):
 
     __table_args__ = (
         Index("ix_providers_organization_id", "organization_id"),
+        Index("ix_providers_email", "email", unique=True),
     )
 
 

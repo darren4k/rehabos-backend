@@ -82,9 +82,30 @@ class Settings(BaseSettings):
 
     # CORS
     cors_origins: list[str] = Field(
-        default=["*"],
+        default=["http://localhost:8083", "http://127.0.0.1:8083"],
         description="Allowed CORS origins",
     )
+
+    # JWT Auth
+    jwt_secret: str = Field(
+        default="CHANGE-ME-IN-PRODUCTION",
+        description="HS256 signing key for JWT tokens",
+    )
+    jwt_algorithm: str = Field(default="HS256")
+    access_token_expire_minutes: int = Field(default=30)
+    refresh_token_expire_days: int = Field(default=7)
+    cookie_secure: bool = Field(
+        default=False,
+        description="Set True in prod (HTTPS-only cookies)",
+    )
+    cookie_domain: str = Field(
+        default="",
+        description="Cookie domain; empty = current host",
+    )
+
+    # Seed admin on first startup
+    first_admin_email: str = Field(default="")
+    first_admin_password: str = Field(default="")
 
     # memU Session Memory
     memu_enabled: bool = Field(

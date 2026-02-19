@@ -7,6 +7,8 @@ from typing import Callable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from rehab_os.core.auth import ACCESS_COOKIE, decode_token
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,9 +48,18 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         self.api_key = api_key
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        # Skip auth for health endpoints
-        if request.url.path in ["/health", "/health/ready", "/health/live", "/docs", "/openapi.json"]:
+        # Skip auth for health endpoints and auth routes
+        skip_paths = ["/health", "/health/ready", "/health/live", "/docs", "/openapi.json"]
+        path = request.url.path
+        if path in skip_paths or path.startswith("/api/v1/auth/"):
             return await call_next(request)
+
+        # If a valid JWT access cookie is present, pass through (no API key needed)
+        token = request.cookies.get(ACCESS_COOKIE)
+        if token:
+            claims = decode_token(token)
+            if claims and claims.get("type") == "access":
+                return await call_next(request)
 
         # Check API key
         auth_header = request.headers.get("Authorization")
