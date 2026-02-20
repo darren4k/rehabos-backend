@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from tests.conftest import apply_auth_override
 from rehab_os.api.routes import consult, agents, health
 from rehab_os.models.output import (
     ConsultationResponse,
@@ -58,6 +59,7 @@ def test_app(mock_app_state):
     app.state.vector_store = mock_app_state["vector_store"]
     app.state.guideline_repo = mock_app_state["guideline_repo"]
 
+    apply_auth_override(app)
     return app
 
 
@@ -361,7 +363,7 @@ class TestAPIErrorHandling:
         )
 
         assert response.status_code == 500
-        assert "failed" in response.json()["detail"].lower()
+        assert "error" in response.json()["detail"].lower()
 
     def test_missing_required_field(self, client):
         """Test that missing required fields return 422."""

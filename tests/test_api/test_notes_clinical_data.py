@@ -7,6 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.conftest import apply_auth_override
 from rehab_os.api.routes.notes import (
     router, _generate_from_transcript, GeneratedNote, ExtractedClinicalData,
 )
@@ -20,6 +21,7 @@ from rehab_os.models.clinical import (
 def app():
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
+    apply_auth_override(app)
     return app
 
 

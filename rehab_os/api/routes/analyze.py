@@ -5,8 +5,11 @@ evidence-based rehabilitation recommendations.
 """
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 
 router = APIRouter(prefix="/analyze", tags=["analyze"])
 
@@ -402,7 +405,7 @@ def get_matching_protocols(diagnoses: list[str], chief_complaint: Optional[str])
 
 
 @router.post("/patient", response_model=AnalysisResponse)
-async def analyze_patient(patient: PatientData):
+async def analyze_patient(patient: PatientData, current_user: Provider = Depends(get_current_user)):
     """Analyze patient data and provide evidence-based rehab recommendations.
 
     Accepts structured patient data (can come from EMR integration or manual entry)
@@ -529,7 +532,7 @@ class QuickAnalysisRequest(BaseModel):
 
 
 @router.post("/quick-analysis")
-async def quick_analysis(body: QuickAnalysisRequest):
+async def quick_analysis(body: QuickAnalysisRequest, current_user: Provider = Depends(get_current_user)):
     """Quick analysis based on diagnoses only.
 
     Use this for rapid lookup without full patient context.

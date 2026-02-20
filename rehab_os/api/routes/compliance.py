@@ -9,8 +9,11 @@ RehabOS is designed for HIPAA compliance:
 
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, Request, Header
+from fastapi import APIRouter, Depends, Request, Header
 from pydantic import BaseModel, Field
+
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 import hashlib
 import json
 import logging
@@ -82,7 +85,7 @@ def log_phi_access(
 
 
 @router.get("/info", response_model=ComplianceInfo)
-async def get_compliance_info():
+async def get_compliance_info(current_user: Provider = Depends(get_current_user)):
     """Get HIPAA compliance information for RehabOS.
 
     RehabOS is designed for HIPAA compliance:
@@ -127,7 +130,7 @@ async def get_compliance_info():
 
 
 @router.get("/audit-policy")
-async def get_audit_policy():
+async def get_audit_policy(current_user: Provider = Depends(get_current_user)):
     """Get the audit logging policy."""
     return {
         "audit_logging_enabled": True,
@@ -149,7 +152,7 @@ async def get_audit_policy():
 
 
 @router.get("/data-flow")
-async def get_data_flow():
+async def get_data_flow(current_user: Provider = Depends(get_current_user)):
     """Explains how patient data flows through RehabOS."""
     return {
         "data_flow": {
@@ -196,6 +199,7 @@ async def log_data_access(
     resource: str,
     data_types: list[str],
     x_user_id: Optional[str] = Header(None),
+    current_user: Provider = Depends(get_current_user),
 ):
     """Manually log a PHI access event.
 
@@ -215,7 +219,7 @@ async def log_data_access(
 
 
 @router.get("/encryption-requirements")
-async def get_encryption_requirements():
+async def get_encryption_requirements(current_user: Provider = Depends(get_current_user)):
     """Get encryption requirements for HIPAA compliance."""
     return {
         "in_transit": {
@@ -242,7 +246,7 @@ async def get_encryption_requirements():
 
 
 @router.get("/integration-guide")
-async def get_integration_guide():
+async def get_integration_guide(current_user: Provider = Depends(get_current_user)):
     """Guide for HIPAA-compliant integration with EMR systems."""
     return {
         "overview": "RehabOS integrates with EMRs as a clinical decision support tool",

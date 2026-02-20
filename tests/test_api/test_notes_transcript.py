@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from rehab_os.api.routes.notes import router, _generate_from_transcript, GeneratedNote
+from tests.conftest import apply_auth_override
 
 
 @pytest.fixture
@@ -27,6 +28,7 @@ def app():
     mock_llm.complete = AsyncMock(return_value=mock_response)
     app.state.llm_router = mock_llm
 
+    apply_auth_override(app)
     return app
 
 

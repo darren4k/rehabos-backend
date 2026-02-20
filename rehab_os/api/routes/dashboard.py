@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
+from rehab_os.api.dependencies import get_current_user
 from rehab_os.core.database import get_db
 from rehab_os.core.models import AppointmentDB, ClinicalNote, Patient, Provider
 
@@ -86,6 +87,7 @@ async def get_dashboard_metrics(
     scope: str = Query("org", pattern="^(me|org)$"),
     therapist_id: Optional[uuid.UUID] = Query(None),
     organization_id: Optional[uuid.UUID] = Query(None),
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> DashboardMetrics:
     """Single-call aggregate metrics for the dashboard KPI strip and compliance card.

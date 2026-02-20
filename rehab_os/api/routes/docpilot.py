@@ -6,8 +6,11 @@ on port 3847. Also proxies TTS so DocPilot can speak back.
 
 import logging
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
+
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 from pydantic import BaseModel
 from typing import Optional, Any
 
@@ -23,7 +26,7 @@ class VoiceCommand(BaseModel):
 
 
 @router.post("/command")
-async def voice_command(req: VoiceCommand):
+async def voice_command(req: VoiceCommand, current_user: Provider = Depends(get_current_user)):
     """Send a natural language command to DocPilot."""
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
@@ -37,7 +40,7 @@ async def voice_command(req: VoiceCommand):
 
 
 @router.post("/command/connect")
-async def voice_connect(emr: str = "hellonote"):
+async def voice_connect(emr: str = "hellonote", current_user: Provider = Depends(get_current_user)):
     """Start a voice-commanded EMR session."""
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
@@ -51,7 +54,7 @@ async def voice_connect(emr: str = "hellonote"):
 
 
 @router.get("/command/status")
-async def voice_status():
+async def voice_status(current_user: Provider = Depends(get_current_user)):
     """Get DocPilot voice commander status."""
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
@@ -62,7 +65,7 @@ async def voice_status():
 
 
 @router.get("/health")
-async def docpilot_health():
+async def docpilot_health(current_user: Provider = Depends(get_current_user)):
     """Check DocPilot availability."""
     async with httpx.AsyncClient(timeout=5.0) as client:
         try:

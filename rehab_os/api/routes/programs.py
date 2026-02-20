@@ -10,8 +10,11 @@ import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
+
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 
 router = APIRouter(prefix="/programs", tags=["programs"])
 
@@ -831,7 +834,7 @@ def apply_learning_adjustments(program: dict, condition: str) -> dict:
 # ==================
 
 @router.post("/generate", response_model=RehabProgram)
-async def generate_program(request: ProgramRequest):
+async def generate_program(request: ProgramRequest, current_user: Provider = Depends(get_current_user)):
     """Generate a personalized rehabilitation program.
 
     The program scales from standard to highly individualized based on
@@ -1071,7 +1074,7 @@ def build_comorbidity_response(detected_comorbidities: list[dict], section: str)
 
 
 @router.post("/refine", response_model=ProgramRefineResponse)
-async def refine_program(request: Request, refine_request: ProgramRefineRequest):
+async def refine_program(request: Request, refine_request: ProgramRefineRequest, current_user: Provider = Depends(get_current_user)):
     """Refine a program based on follow-up feedback.
 
     This endpoint processes user feedback about specific sections and
@@ -1327,7 +1330,7 @@ def update_program_exercise(current_program: dict, old_exercise: str, new_exerci
 
 
 @router.post("/feedback")
-async def submit_feedback(feedback: ProgramFeedback):
+async def submit_feedback(feedback: ProgramFeedback, current_user: Provider = Depends(get_current_user)):
     """Submit feedback on a generated program for continuous learning.
 
     This feedback is used to improve future program generation.
@@ -1390,7 +1393,7 @@ async def update_learning_summary():
 
 
 @router.get("/learning-stats")
-async def get_learning_stats():
+async def get_learning_stats(current_user: Provider = Depends(get_current_user)):
     """Get statistics about the learning system."""
     summary_file = LEARNING_DATA_PATH / "feedback_summary.json"
 
@@ -1415,7 +1418,7 @@ async def get_learning_stats():
 
 
 @router.get("/templates")
-async def get_program_templates():
+async def get_program_templates(current_user: Provider = Depends(get_current_user)):
     """Get available program templates/conditions."""
     return {
         "conditions": list(CONDITION_PROTOCOLS.keys()),
@@ -1447,7 +1450,7 @@ class ParsedProgramData(BaseModel):
 
 
 @router.post("/parse-voice", response_model=ParsedProgramData)
-async def parse_voice_to_program(request: VoiceProgramRequest):
+async def parse_voice_to_program(request: VoiceProgramRequest, current_user: Provider = Depends(get_current_user)):
     """Parse a voice transcript into program request fields.
 
     Examples of supported input:

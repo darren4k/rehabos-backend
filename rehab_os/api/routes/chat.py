@@ -7,6 +7,7 @@ and provide personalized assistance.
 Connects to the DGX Spark LLM for natural conversation.
 """
 
+import asyncio
 import json
 import hashlib
 import re
@@ -14,8 +15,19 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Depends, Request, HTTPException
 from pydantic import BaseModel, Field
+
+_SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def _validate_conversation_id(conversation_id: str) -> None:
+    """Reject conversation IDs that could cause path traversal."""
+    if not _SAFE_ID_RE.match(conversation_id):
+        raise HTTPException(status_code=400, detail="Invalid conversation ID")
+
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 
 from rehab_os.llm.base import Message as LLMMessage
 
@@ -453,8 +465,9 @@ What would be most helpful right now?"""
 # CONVERSATION MANAGEMENT
 # ==================
 
-def load_conversation(conversation_id: str) -> Optional[Conversation]:
-    """Load a conversation from storage."""
+def _load_conversation_sync(conversation_id: str) -> Optional[Conversation]:
+    """Load a conversation from storage (sync)."""
+    _validate_conversation_id(conversation_id)
     conv_file = CHAT_DATA_PATH / f"{conversation_id}.json"
     if conv_file.exists():
         with open(conv_file) as f:
@@ -463,11 +476,21 @@ def load_conversation(conversation_id: str) -> Optional[Conversation]:
     return None
 
 
-def save_conversation(conversation: Conversation):
-    """Save a conversation to storage."""
+def _save_conversation_sync(conversation: Conversation):
+    """Save a conversation to storage (sync)."""
     conv_file = CHAT_DATA_PATH / f"{conversation.conversation_id}.json"
     with open(conv_file, "w") as f:
         json.dump(conversation.model_dump(), f, indent=2)
+
+
+async def load_conversation(conversation_id: str) -> Optional[Conversation]:
+    """Load a conversation from storage (async-safe)."""
+    return await asyncio.to_thread(_load_conversation_sync, conversation_id)
+
+
+async def save_conversation(conversation: Conversation):
+    """Save a conversation to storage (async-safe)."""
+    await asyncio.to_thread(_save_conversation_sync, conversation)
 
 
 def create_conversation(discipline: str = "PT") -> Conversation:
@@ -484,7 +507,7 @@ def create_conversation(discipline: str = "PT") -> Conversation:
         context={},
     )
 
-    save_conversation(conversation)
+    _save_conversation_sync(conversation)
     return conversation
 
 
@@ -493,7 +516,7 @@ def create_conversation(discipline: str = "PT") -> Conversation:
 # ==================
 
 @router.post("/message", response_model=ChatResponse)
-async def send_message(request: ChatRequest, req: Request):
+async def send_message(request: ChatRequest, req: Request, current_user: Provider = Depends(get_current_user)):
     """Send a message and receive a conversational AI response.
 
     Uses the DGX Spark LLM for natural conversation when available,
@@ -502,7 +525,7 @@ async def send_message(request: ChatRequest, req: Request):
 
     # Get or create conversation
     if request.conversation_id:
-        conversation = load_conversation(request.conversation_id)
+        conversation = await load_conversation(request.conversation_id)
         if not conversation:
             conversation = create_conversation(request.discipline)
     else:
@@ -592,7 +615,7 @@ Keep responses concise but informative. Use bullet points for lists. Be natural 
 
     # Update and save conversation
     conversation.last_activity = now
-    save_conversation(conversation)
+    await save_conversation(conversation)
 
     return ChatResponse(
         conversation_id=conversation.conversation_id,
@@ -605,39 +628,42 @@ Keep responses concise but informative. Use bullet points for lists. Be natural 
 
 
 @router.get("/conversation/{conversation_id}")
-async def get_conversation(conversation_id: str):
+async def get_conversation(conversation_id: str, current_user: Provider = Depends(get_current_user)):
     """Get a conversation by ID."""
-    conversation = load_conversation(conversation_id)
+    conversation = await load_conversation(conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
 
 
 @router.get("/conversations")
-async def list_conversations(limit: int = 20):
+async def list_conversations(limit: int = 20, current_user: Provider = Depends(get_current_user)):
     """List recent conversations."""
-    conversations = []
+    def _list_sync():
+        conversations = []
+        for conv_file in sorted(CHAT_DATA_PATH.glob("*.json"), reverse=True)[:limit]:
+            try:
+                with open(conv_file) as f:
+                    data = json.load(f)
+                    conversations.append({
+                        "conversation_id": data["conversation_id"],
+                        "created_at": data["created_at"],
+                        "last_activity": data["last_activity"],
+                        "message_count": len(data["messages"]),
+                        "discipline": data.get("discipline", "PT"),
+                    })
+            except (json.JSONDecodeError, KeyError):
+                continue
+        return conversations
 
-    for conv_file in sorted(CHAT_DATA_PATH.glob("*.json"), reverse=True)[:limit]:
-        try:
-            with open(conv_file) as f:
-                data = json.load(f)
-                conversations.append({
-                    "conversation_id": data["conversation_id"],
-                    "created_at": data["created_at"],
-                    "last_activity": data["last_activity"],
-                    "message_count": len(data["messages"]),
-                    "discipline": data.get("discipline", "PT"),
-                })
-        except (json.JSONDecodeError, KeyError):
-            continue
-
+    conversations = await asyncio.to_thread(_list_sync)
     return {"conversations": conversations, "total": len(conversations)}
 
 
 @router.delete("/conversation/{conversation_id}")
-async def delete_conversation(conversation_id: str):
+async def delete_conversation(conversation_id: str, current_user: Provider = Depends(get_current_user)):
     """Delete a conversation."""
+    _validate_conversation_id(conversation_id)
     conv_file = CHAT_DATA_PATH / f"{conversation_id}.json"
     if conv_file.exists():
         conv_file.unlink()
@@ -646,7 +672,7 @@ async def delete_conversation(conversation_id: str):
 
 
 @router.get("/quick-responses")
-async def get_quick_responses():
+async def get_quick_responses(current_user: Provider = Depends(get_current_user)):
     """Get suggested quick responses for the chat interface."""
     return {
         "categories": [
@@ -714,7 +740,7 @@ OLLAMA_URL = "http://192.168.68.127:11434"
 
 
 @router.post("/converse", response_model=ConverseResponse)
-async def converse(request: ConverseRequest, req: Request):
+async def converse(request: ConverseRequest, req: Request, current_user: Provider = Depends(get_current_user)):
     """Conversational chat with custom system prompt. Used for note-taking flow.
 
     model="fast" → llama3.1:8b (~2-3s, for back-and-forth conversation)

@@ -8,9 +8,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func, select
+from sqlalchemy import func, select, literal
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
+from rehab_os.api.dependencies import get_current_user
 from rehab_os.core.database import get_db
 from rehab_os.core.models import AppointmentDB, ClinicalNote, Patient, Provider
 from rehab_os.core.schemas import ProviderRead
@@ -41,6 +43,7 @@ class TeamResponse(BaseModel):
 async def get_team(
     organization_id: Optional[uuid.UUID] = Query(None),
     discipline: Optional[str] = Query(None),
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TeamResponse:
     """List therapists in the organization with per-therapist KPI counts."""
@@ -56,58 +59,70 @@ async def get_team(
     result = await db.execute(q)
     providers = result.scalars().all()
 
-    # Compute per-therapist metrics
-    now = datetime.now(timezone.utc)
+    if not providers:
+        return TeamResponse(therapists=[], total=0)
+
+    # Batch-compute per-therapist metrics with 3 aggregate queries (not 3N)
     from rehab_os.api.routes.dashboard import _week_range
     week_start, week_end = _week_range()
 
-    summaries: list[TherapistSummary] = []
-    for p in providers:
-        # Active patients where this provider is primary therapist
-        active_pts = (
-            await db.execute(
-                select(func.count(Patient.id)).where(
-                    Patient.active.is_(True),
-                    Patient.primary_therapist_id == p.id,
-                )
-            )
-        ).scalar_one()
+    provider_ids = [p.id for p in providers]
 
-        # Visits this week
-        visits = (
-            await db.execute(
-                select(func.count(AppointmentDB.id)).where(
-                    AppointmentDB.provider_id == p.id,
-                    AppointmentDB.start_time >= week_start,
-                    AppointmentDB.start_time <= week_end,
-                    AppointmentDB.status != "cancelled",
-                )
-            )
-        ).scalar_one()
-
-        # Unsigned notes
-        unsigned = (
-            await db.execute(
-                select(func.count(ClinicalNote.id)).where(
-                    ClinicalNote.therapist_id == p.id,
-                    ClinicalNote.status == "draft",
-                )
-            )
-        ).scalar_one()
-
-        summaries.append(
-            TherapistSummary(
-                id=p.id,
-                first_name=p.first_name,
-                last_name=p.last_name,
-                discipline=p.discipline,
-                credentials=p.credentials,
-                role=p.role,
-                active_patients=active_pts,
-                visits_this_week=visits,
-                unsigned_notes=unsigned,
-            )
+    # Active patients per therapist
+    pts_result = await db.execute(
+        select(
+            Patient.primary_therapist_id,
+            func.count(Patient.id).label("cnt"),
         )
+        .where(Patient.active.is_(True), Patient.primary_therapist_id.in_(provider_ids))
+        .group_by(Patient.primary_therapist_id)
+    )
+    active_pts_map = {row[0]: row[1] for row in pts_result.all()}
+
+    # Visits this week per therapist
+    visits_result = await db.execute(
+        select(
+            AppointmentDB.provider_id,
+            func.count(AppointmentDB.id).label("cnt"),
+        )
+        .where(
+            AppointmentDB.provider_id.in_(provider_ids),
+            AppointmentDB.start_time >= week_start,
+            AppointmentDB.start_time <= week_end,
+            AppointmentDB.status != "cancelled",
+        )
+        .group_by(AppointmentDB.provider_id)
+    )
+    visits_map = {row[0]: row[1] for row in visits_result.all()}
+
+    # Unsigned notes per therapist
+    unsigned_result = await db.execute(
+        select(
+            ClinicalNote.therapist_id,
+            func.count(ClinicalNote.id).label("cnt"),
+        )
+        .where(
+            ClinicalNote.therapist_id.in_(provider_ids),
+            ClinicalNote.status == "draft",
+        )
+        .group_by(ClinicalNote.therapist_id)
+    )
+    unsigned_map = {row[0]: row[1] for row in unsigned_result.all()}
+
+    summaries = [
+        TherapistSummary(
+            id=p.id,
+            first_name=p.first_name,
+            last_name=p.last_name,
+            discipline=p.discipline,
+            credentials=p.credentials,
+            role=p.role,
+            active_patients=active_pts_map.get(p.id, 0),
+            visits_this_week=visits_map.get(p.id, 0),
+            unsigned_notes=unsigned_map.get(p.id, 0),
+        )
+        for p in providers
+    ]
 
     return TeamResponse(therapists=summaries, total=len(summaries))
 
@@ -115,6 +130,7 @@ async def get_team(
 @router.get("/{provider_id}", response_model=ProviderRead)
 async def get_therapist(
     provider_id: uuid.UUID,
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ProviderRead:
     """Get a single therapist's profile."""

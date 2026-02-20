@@ -5,8 +5,11 @@ evidence-based treatment approaches with citations.
 """
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
@@ -597,7 +600,7 @@ def find_matching_topics(query: str) -> list[str]:
 
 
 @router.post("/ask", response_model=KnowledgeResponse)
-async def ask_clinical_question(query: KnowledgeQuery):
+async def ask_clinical_question(query: KnowledgeQuery, current_user: Provider = Depends(get_current_user)):
     """Ask a clinical question and get evidence-based information.
 
     You can ask:
@@ -671,7 +674,7 @@ async def ask_clinical_question(query: KnowledgeQuery):
 
 
 @router.get("/topics")
-async def list_available_topics(discipline: str = Query("PT", description="PT, OT, or SLP")):
+async def list_available_topics(discipline: str = Query("PT", description="PT, OT, or SLP"), current_user: Provider = Depends(get_current_user)):
     """List available knowledge topics by discipline."""
     topics_by_discipline = {
         "PT": [
@@ -711,6 +714,7 @@ async def list_available_topics(discipline: str = Query("PT", description="PT, O
 async def quick_lookup(
     topic: str,
     aspect: str = Query("overview", description="overview, exercises, red_flags, outcome_measures"),
+    current_user: Provider = Depends(get_current_user),
 ):
     """Quick lookup for common clinical questions."""
     topic_lower = topic.lower().replace("-", " ").replace("_", " ")
@@ -738,7 +742,7 @@ async def quick_lookup(
 
 
 @router.get("/guidelines")
-async def list_guidelines(discipline: str = Query("PT")):
+async def list_guidelines(discipline: str = Query("PT"), current_user: Provider = Depends(get_current_user)):
     """List available clinical practice guidelines."""
     guidelines = {
         "PT": [

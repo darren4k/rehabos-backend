@@ -13,6 +13,7 @@ from rehab_os.core.database import get_db
 from rehab_os.api.routes.scheduling import router
 
 from fastapi import FastAPI
+from tests.conftest import apply_auth_override
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +80,7 @@ async def client(engine, seed_data):
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
     app.dependency_overrides[get_db] = _override_get_db
+    apply_auth_override(app)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

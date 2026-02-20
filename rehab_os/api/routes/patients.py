@@ -8,7 +8,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rehab_os.api.dependencies import get_current_user
 from rehab_os.core.database import get_db
+from rehab_os.core.models import Provider
 from rehab_os.core.repository import (
     AuditRepository,
     EncounterRepository,
@@ -36,6 +38,7 @@ async def list_patients(
     search: Optional[str] = Query(None),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     repo = PatientRepository(db)
@@ -45,7 +48,7 @@ async def list_patients(
 
 
 @router.get("/{patient_id}", response_model=PatientRead)
-async def get_patient(patient_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_patient(patient_id: uuid.UUID, current_user: Provider = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     repo = PatientRepository(db)
     patient = await repo.get_by_id(patient_id)
     if not patient:
@@ -57,6 +60,7 @@ async def get_patient(patient_id: uuid.UUID, db: AsyncSession = Depends(get_db))
 async def create_patient(
     data: PatientCreate,
     request: Request,
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     repo = PatientRepository(db)
@@ -75,6 +79,7 @@ async def update_patient(
     patient_id: uuid.UUID,
     data: PatientUpdate,
     request: Request,
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     repo = PatientRepository(db)
@@ -96,6 +101,7 @@ async def create_encounter(
     patient_id: uuid.UUID,
     data: EncounterCreate,
     request: Request,
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     # Verify patient exists
@@ -116,11 +122,12 @@ async def create_encounter(
 async def list_encounters(
     patient_id: uuid.UUID,
     limit: int = Query(50, ge=1, le=200),
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     return await EncounterRepository(db).list_by_patient(patient_id, limit=limit)
 
 
 @router.get("/{patient_id}/insurance", response_model=list[InsuranceRead])
-async def get_insurance(patient_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_insurance(patient_id: uuid.UUID, current_user: Provider = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     return await InsuranceRepository(db).get_by_patient(patient_id)

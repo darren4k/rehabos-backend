@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.conftest import apply_auth_override
+
 from rehab_os.api.routes.documents import (
     DocumentExtraction,
     MedicationEntry,

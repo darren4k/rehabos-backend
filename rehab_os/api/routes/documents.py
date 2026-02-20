@@ -5,8 +5,12 @@ import json
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
+
+from rehab_os.api.audit import log_phi_access
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +204,7 @@ async def _call_llm_for_extraction(
         content = response.choices[0].message.content or "{}"
     except Exception as e:
         logger.error("LLM extraction failed: %s", e)
-        raise HTTPException(status_code=502, detail=f"LLM extraction failed: {e}")
+        raise HTTPException(status_code=502, detail="Document extraction failed")
 
     # Parse JSON from response (strip markdown fences if present)
     text = content.strip()
@@ -243,6 +247,7 @@ async def _call_llm_for_extraction(
 async def extract_document(
     request: Request,
     file: UploadFile = File(...),
+    current_user: Provider = Depends(get_current_user),
 ):
     """Upload an image or PDF and extract structured clinical data."""
     content_type = file.content_type or "application/octet-stream"
@@ -257,6 +262,13 @@ async def extract_document(
         raise HTTPException(status_code=400, detail="Empty file uploaded")
 
     extraction = await _call_llm_for_extraction(request, file_bytes, content_type)
+    log_phi_access(
+        user_id=str(current_user.id),
+        action="create",
+        resource_type="document_extraction",
+        resource_id="",
+        ip_address=request.client.host if request.client else "",
+    )
     return extraction
 
 
@@ -265,6 +277,7 @@ async def extract_and_populate(
     request: Request,
     file: UploadFile = File(...),
     session_id: str = Form(...),
+    current_user: Provider = Depends(get_current_user),
 ):
     """Extract document data and merge into an active note session."""
     content_type = file.content_type or "application/octet-stream"
@@ -301,4 +314,11 @@ async def extract_and_populate(
         if items:
             sections_updated[section] = items
 
+    log_phi_access(
+        user_id=str(current_user.id),
+        action="create",
+        resource_type="document_extraction",
+        resource_id=session_id,
+        ip_address=request.client.host if request.client else "",
+    )
     return PopulateResult(extraction=extraction, sections_updated=sections_updated)

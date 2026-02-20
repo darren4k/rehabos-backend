@@ -6,7 +6,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from rehab_os.api.dependencies import get_current_user
 from rehab_os.api.rate_limit import SlidingWindowRateLimiter
+from rehab_os.core.models import Provider
 
 from rehab_os.models.output import (
     ClinicalRequest,
@@ -56,6 +58,7 @@ async def create_consultation(
     request: Request,
     consult_request: ConsultRequest,
     _rate=Depends(_consult_limiter),
+    current_user: Provider = Depends(get_current_user),
 ) -> ConsultationResponse:
     """Process a clinical consultation through the agent pipeline.
 
@@ -102,7 +105,7 @@ async def create_consultation(
         logger.exception(f"Consultation error: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Consultation processing failed: {str(e)}",
+            detail="Internal processing error",
         )
 
 
@@ -110,6 +113,7 @@ async def create_consultation(
 async def quick_consultation(
     request: Request,
     consult_request: QuickConsultRequest,
+    current_user: Provider = Depends(get_current_user),
 ) -> ConsultationResponse:
     """Quick consultation with minimal input.
 
@@ -147,7 +151,7 @@ async def quick_consultation(
         logger.exception(f"Quick consultation error: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Consultation processing failed: {str(e)}",
+            detail="Internal processing error",
         )
 
 
@@ -155,6 +159,7 @@ async def quick_consultation(
 async def safety_check(
     request: Request,
     consult_request: ConsultRequest,
+    current_user: Provider = Depends(get_current_user),
 ) -> dict:
     """Run safety screening only.
 
@@ -190,5 +195,5 @@ async def safety_check(
         logger.exception(f"Safety check error: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Safety check failed: {str(e)}",
+            detail="Internal processing error",
         )

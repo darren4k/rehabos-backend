@@ -23,8 +23,8 @@ build/
 .env.local
 
 # Data (local storage)
-data/chroma/
-data/logs/
+data/
+*.db
 *.log
 
 # Test/Coverage

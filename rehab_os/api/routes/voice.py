@@ -22,8 +22,11 @@ from typing import Optional, Literal
 from enum import Enum
 import httpx
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 import io
 
 from rehab_os.config import get_settings
@@ -225,7 +228,7 @@ def get_tts_client() -> QwenTTSClient:
 # ==================
 
 @router.post("/synthesize", response_model=TTSResponse)
-async def synthesize_speech(request: TTSRequest):
+async def synthesize_speech(request: TTSRequest, current_user: Provider = Depends(get_current_user)):
     """Synthesize text to speech using Qwen3-TTS.
 
     Runs on local DGX Spark server for low-latency, high-quality voice.
@@ -253,7 +256,7 @@ async def synthesize_speech(request: TTSRequest):
 
 
 @router.post("/synthesize/stream")
-async def synthesize_speech_stream(request: TTSRequest):
+async def synthesize_speech_stream(request: TTSRequest, current_user: Provider = Depends(get_current_user)):
     """Stream synthesized speech audio.
 
     Returns audio as streaming response for real-time playback.
@@ -283,7 +286,7 @@ async def synthesize_speech_stream(request: TTSRequest):
 
 
 @router.get("/health")
-async def check_voice_health():
+async def check_voice_health(current_user: Provider = Depends(get_current_user)):
     """Check voice service health."""
     client = get_tts_client()
     is_healthy = await client.check_health()
@@ -298,7 +301,7 @@ async def check_voice_health():
 
 
 @router.get("/voices")
-async def list_available_voices():
+async def list_available_voices(current_user: Provider = Depends(get_current_user)):
     """List available voice options."""
     return {
         "voices": [
@@ -335,7 +338,7 @@ async def list_available_voices():
 
 
 @router.post("/tts")
-async def tts_proxy(request: TTSRequest):
+async def tts_proxy(request: TTSRequest, current_user: Provider = Depends(get_current_user)):
     """Proxy TTS request — tries Qwen3-TTS, falls back to Piper."""
     client = get_tts_client()
     text = request.text
@@ -381,7 +384,7 @@ async def tts_proxy(request: TTSRequest):
 
 
 @router.get("/setup-instructions")
-async def get_setup_instructions():
+async def get_setup_instructions(current_user: Provider = Depends(get_current_user)):
     """Get instructions for setting up Qwen3-TTS on DGX Spark."""
     return {
         "title": "Qwen3-TTS Setup on DGX Spark",

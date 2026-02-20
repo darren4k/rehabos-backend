@@ -8,8 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rehab_os.api.dependencies import get_current_user
 from rehab_os.core.database import get_db
-from rehab_os.core.models import AppointmentDB, Encounter, Insurance
+from rehab_os.core.models import AppointmentDB, Encounter, Insurance, Provider
 from rehab_os.core.repository import (
     AppointmentRepository,
     EncounterRepository,
@@ -200,6 +201,7 @@ async def get_provider_availability(
     provider_id: str,
     start_date: date = Query(...),
     end_date: date = Query(...),
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[TimeSlot]:
     """Return available slots for a provider over a date range."""
@@ -239,6 +241,7 @@ async def get_provider_availability(
 @router.get("/providers/{provider_id}/hours", response_model=list[AvailabilityRuleResponse])
 async def get_provider_hours(
     provider_id: str,
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[AvailabilityRuleResponse]:
     pid = _parse_uuid(provider_id, "provider_id")
@@ -259,6 +262,7 @@ async def get_provider_hours(
 async def set_provider_hours(
     provider_id: str,
     rules: list[AvailabilityRuleIn],
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[AvailabilityRuleResponse]:
     pid = _parse_uuid(provider_id, "provider_id")
@@ -287,6 +291,7 @@ async def set_provider_hours(
 @router.post("/appointments", response_model=AppointmentResponse, status_code=201)
 async def book_appointment(
     body: AppointmentCreate,
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AppointmentResponse:
     """Book a single appointment with conflict detection and insurance warning."""
@@ -321,6 +326,7 @@ async def list_appointments(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[AppointmentResponse]:
     """List appointments with filters."""
@@ -353,6 +359,7 @@ async def list_appointments(
 @router.get("/appointments/{appointment_id}", response_model=AppointmentResponse)
 async def get_appointment(
     appointment_id: str,
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AppointmentResponse:
     """Get a single appointment."""
@@ -368,6 +375,7 @@ async def get_appointment(
 async def update_appointment(
     appointment_id: str,
     body: AppointmentUpdate,
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AppointmentResponse:
     """Update an appointment. Validates conflicts on time changes."""
@@ -395,6 +403,7 @@ async def update_appointment(
 async def cancel_appointment(
     appointment_id: str,
     body: CancelRequest | None = None,
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AppointmentResponse:
     """Cancel an appointment (soft delete via status)."""
@@ -414,6 +423,7 @@ async def cancel_appointment(
 @router.post("/appointments/{appointment_id}/check-in", response_model=AppointmentResponse)
 async def check_in_appointment(
     appointment_id: str,
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AppointmentResponse:
     """Check in: set status=checked_in and create a linked Encounter."""
@@ -448,6 +458,7 @@ async def check_in_appointment(
 @router.post("/appointments/{appointment_id}/complete", response_model=AppointmentResponse)
 async def complete_appointment(
     appointment_id: str,
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AppointmentResponse:
     """Complete: set status=completed, finalize encounter, increment insurance visits_used."""
@@ -487,6 +498,7 @@ async def complete_appointment(
 async def insurance_check(
     patient_id: str = Query(...),
     discipline: str = Query("PT"),
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> InsuranceCheckResponse:
     """Check insurance authorization for a patient + discipline."""
@@ -533,6 +545,7 @@ async def insurance_check(
 @router.post("/auto-schedule", response_model=AutoScheduleResponse)
 async def auto_schedule(
     request: ScheduleRequest,
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AutoScheduleResponse:
     """Auto-schedule a series of appointments and persist to DB."""
@@ -613,6 +626,7 @@ async def auto_schedule(
 @router.post("/optimize-route", response_model=list[AppointmentResponse])
 async def optimize_route(
     req: RouteRequest,
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[AppointmentResponse]:
     """Optimize daily route order for home-health appointments."""

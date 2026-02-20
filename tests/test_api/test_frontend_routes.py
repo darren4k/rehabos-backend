@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from fastapi.websockets import WebSocket
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from tests.conftest import apply_auth_override
 from rehab_os.api.routes import sessions, streaming, mobile
 from rehab_os.models.output import (
     ConsultationResponse,
@@ -46,6 +47,7 @@ def sessions_app():
     app.include_router(sessions.router, prefix="/api/v1")
     # Clear sessions between tests
     sessions._sessions.clear()
+    apply_auth_override(app)
     return app
 
 
@@ -61,6 +63,7 @@ def mobile_app(mock_orchestrator):
     app = FastAPI()
     app.include_router(mobile.router, prefix="/api/v1")
     app.state.orchestrator = mock_orchestrator
+    apply_auth_override(app)
     return app
 
 
@@ -76,6 +79,7 @@ def streaming_app(mock_orchestrator):
     app = FastAPI()
     app.include_router(streaming.router, prefix="/api/v1")
     app.state.orchestrator = mock_orchestrator
+    apply_auth_override(app)
     return app
 
 

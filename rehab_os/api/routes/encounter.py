@@ -11,8 +11,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
+
+from rehab_os.api.audit import log_phi_access
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 
 from rehab_os.encounter.brain import EncounterBrain
 from rehab_os.encounter.state import EncounterPhase, EncounterState
@@ -80,7 +84,7 @@ class GenerateResponse(BaseModel):
 
 
 @router.post("/turn", response_model=TurnResponse)
-async def encounter_turn(req: TurnRequest, request: Request):
+async def encounter_turn(req: TurnRequest, request: Request, current_user: Provider = Depends(get_current_user)):
     """Process a therapist utterance and get an intelligent response.
 
     This is the main conversation endpoint. The Brain:
@@ -133,7 +137,7 @@ async def encounter_turn(req: TurnRequest, request: Request):
 
 
 @router.post("/generate", response_model=GenerateResponse)
-async def encounter_generate(req: GenerateRequest, request: Request):
+async def encounter_generate(req: GenerateRequest, request: Request, current_user: Provider = Depends(get_current_user)):
     """Generate a SOAP note from the collected encounter state.
 
     Uses the structured data collected by the Brain (not raw transcript)
@@ -186,11 +190,18 @@ async def encounter_generate(req: GenerateRequest, request: Request):
     state.phase = EncounterPhase.COMPLETE
     _encounters[req.encounter_id] = state
 
+    log_phi_access(
+        user_id=str(current_user.id),
+        action="create",
+        resource_type="encounter",
+        resource_id=req.encounter_id,
+        ip_address=request.client.host if request.client else "",
+    )
     return note
 
 
 @router.get("/state/{encounter_id}")
-async def get_encounter_state(encounter_id: str):
+async def get_encounter_state(encounter_id: str, current_user: Provider = Depends(get_current_user)):
     """Get the current encounter state."""
     if encounter_id not in _encounters:
         from fastapi import HTTPException
@@ -199,7 +210,7 @@ async def get_encounter_state(encounter_id: str):
 
 
 @router.delete("/state/{encounter_id}")
-async def clear_encounter(encounter_id: str):
+async def clear_encounter(encounter_id: str, current_user: Provider = Depends(get_current_user)):
     """Clear an encounter state."""
     _encounters.pop(encounter_id, None)
     return {"status": "cleared", "encounter_id": encounter_id}

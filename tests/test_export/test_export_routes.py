@@ -9,12 +9,14 @@ from httpx import AsyncClient, ASGITransport
 from fastapi import FastAPI
 
 from rehab_os.api.routes.export import router
+from tests.conftest import apply_auth_override
 
 
 # Minimal test app
 def _create_test_app() -> FastAPI:
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
+    apply_auth_override(app)
     return app
 
 

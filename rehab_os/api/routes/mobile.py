@@ -6,8 +6,11 @@ patient-facing features like home exercise programs.
 
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 
 router = APIRouter(prefix="/mobile", tags=["mobile"])
 
@@ -101,7 +104,7 @@ class SafetyCheckResponse(BaseModel):
 
 
 @router.post("/quick-consult", response_model=QuickConsultResponse)
-async def quick_consult(request: QuickConsultRequest):
+async def quick_consult(request: QuickConsultRequest, current_user: Provider = Depends(get_current_user)):
     """Quick consultation for mobile use during rounds.
 
     Returns condensed results optimized for small screens
@@ -167,7 +170,7 @@ async def quick_consult(request: QuickConsultRequest):
 
 
 @router.post("/safety-check", response_model=SafetyCheckResponse)
-async def safety_check(request: SafetyCheckRequest):
+async def safety_check(request: SafetyCheckRequest, current_user: Provider = Depends(get_current_user)):
     """Quick safety screening for symptom triage.
 
     Use this before starting treatment to check for red flags.
@@ -211,7 +214,7 @@ async def safety_check(request: SafetyCheckRequest):
 
 
 @router.post("/hep", response_model=HEPResponse)
-async def get_home_exercise_program(request: HEPRequest):
+async def get_home_exercise_program(request: HEPRequest, current_user: Provider = Depends(get_current_user)):
     """Get a home exercise program for a condition.
 
     Returns exercises formatted for patient education
@@ -314,7 +317,7 @@ async def get_home_exercise_program(request: HEPRequest):
 
 
 @router.get("/disciplines")
-async def get_disciplines():
+async def get_disciplines(current_user: Provider = Depends(get_current_user)):
     """Get available disciplines and their descriptions."""
     return {
         "disciplines": [
@@ -341,7 +344,7 @@ async def get_disciplines():
 
 
 @router.get("/settings")
-async def get_care_settings():
+async def get_care_settings(current_user: Provider = Depends(get_current_user)):
     """Get available care settings."""
     return {
         "settings": [

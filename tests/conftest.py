@@ -1,10 +1,51 @@
 """Pytest configuration and fixtures."""
 
+import uuid
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from rehab_os.llm import LLMRouter, LLMResponse, Message, MessageRole
 from rehab_os.models.patient import PatientContext, Discipline, CareSetting
+
+
+# ---------------------------------------------------------------------------
+# Auth override for tests — bypass get_current_user dependency
+# ---------------------------------------------------------------------------
+
+class _MockProvider:
+    """Lightweight stand-in for Provider ORM model used in tests."""
+
+    def __init__(self):
+        self.id = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+        self.first_name = "Test"
+        self.last_name = "Therapist"
+        self.discipline = "PT"
+        self.role = "owner"
+        self.active = True
+        self.organization_id = None
+        self.credentials = "DPT"
+        self.npi = None
+        self.email = "test@example.com"
+        self.password_hash = None
+        self.must_change_password = False
+
+
+def _fake_current_user():
+    return _MockProvider()
+
+
+@pytest.fixture
+def mock_current_user():
+    """Return a mock provider for auth bypass."""
+    return _MockProvider()
+
+
+def apply_auth_override(app):
+    """Apply get_current_user override to a FastAPI test app."""
+    from rehab_os.api.dependencies import get_current_user
+    app.dependency_overrides[get_current_user] = _fake_current_user
+    return app
 
 
 @pytest.fixture

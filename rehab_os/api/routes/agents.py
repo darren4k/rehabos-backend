@@ -69,7 +69,7 @@ async def run_agent(
         logger.exception(f"Agent {agent_name} error: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Agent execution failed: {str(e)}",
+            detail="Internal processing error",
         )
 
 
@@ -118,7 +118,7 @@ async def search_evidence(
         logger.exception(f"Evidence search error: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Evidence search failed: {str(e)}",
+            detail="Internal processing error",
         )
 
 

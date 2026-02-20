@@ -9,11 +9,48 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
+
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
-
-# In-memory session store (use Redis in production)
+# File-backed session store with in-memory cache
+_SESSIONS_DIR = Path("data/sessions")
+_SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 _sessions: dict[str, dict[str, Any]] = {}
+
+
+def _session_file(session_id: str) -> Path:
+    return _SESSIONS_DIR / f"{session_id}.json"
+
+
+def _save_session(session: dict[str, Any]) -> None:
+    """Persist session to disk and update cache."""
+    sid = session["session_id"]
+    _sessions[sid] = session
+    with open(_session_file(sid), "w") as f:
+        json.dump(session, f)
+
+
+def _load_session(session_id: str) -> Optional[dict[str, Any]]:
+    """Load session from cache or disk."""
+    if session_id in _sessions:
+        return _sessions[session_id]
+    fp = _session_file(session_id)
+    if fp.exists():
+        with open(fp) as f:
+            data = json.load(f)
+        _sessions[session_id] = data
+        return data
+    return None
+
+
+def _delete_session(session_id: str) -> None:
+    """Remove session from cache and disk."""
+    _sessions.pop(session_id, None)
+    fp = _session_file(session_id)
+    if fp.exists():
+        fp.unlink()
 
 
 class SessionCreate(BaseModel):
@@ -54,13 +91,22 @@ class ConsultHistoryItem(BaseModel):
 
 
 @router.get("", response_model=list[SessionResponse])
-async def list_sessions():
+async def list_sessions(current_user: Provider = Depends(get_current_user)):
     """List all active sessions."""
+    # Load any sessions from disk not yet in cache
+    for fp in _SESSIONS_DIR.glob("*.json"):
+        sid = fp.stem
+        if sid not in _sessions:
+            try:
+                with open(fp) as f:
+                    _sessions[sid] = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                continue
     return [SessionResponse(**s) for s in _sessions.values()]
 
 
 @router.post("/create", response_model=SessionResponse)
-async def create_session(request: SessionCreate):
+async def create_session(request: SessionCreate, current_user: Provider = Depends(get_current_user)):
     """Create a new consultation session.
 
     Sessions track user context across multiple consultations.
@@ -83,18 +129,19 @@ async def create_session(request: SessionCreate):
         "metadata": request.metadata,
     }
 
-    _sessions[session_id] = session
+    _save_session(session)
 
     return SessionResponse(**session)
 
 
 @router.get("/{session_id}", response_model=SessionResponse)
-async def get_session(session_id: str):
+async def get_session(session_id: str, current_user: Provider = Depends(get_current_user)):
     """Get session information."""
-    if session_id not in _sessions:
+    session = _load_session(session_id)
+    if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    return SessionResponse(**_sessions[session_id])
+    return SessionResponse(**session)
 
 
 @router.post("/{session_id}/consult")
@@ -105,12 +152,13 @@ async def add_consult_to_session(
     diagnosis: Optional[str] = None,
     has_red_flags: bool = False,
     qa_score: Optional[float] = None,
+    current_user: Provider = Depends(get_current_user),
 ):
     """Record a consultation in the session history."""
-    if session_id not in _sessions:
+    session = _load_session(session_id)
+    if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    session = _sessions[session_id]
     session["last_activity"] = datetime.now(timezone.utc).isoformat()
     session["consult_count"] += 1
     session["consults"].append({
@@ -121,6 +169,7 @@ async def add_consult_to_session(
         "has_red_flags": has_red_flags,
         "qa_score": qa_score,
     })
+    _save_session(session)
 
     return {"status": "recorded", "consult_count": session["consult_count"]}
 
@@ -129,22 +178,25 @@ async def add_consult_to_session(
 async def get_session_history(
     session_id: str,
     limit: int = Query(20, ge=1, le=100),
+    current_user: Provider = Depends(get_current_user),
 ):
     """Get consultation history for a session."""
-    if session_id not in _sessions:
+    session = _load_session(session_id)
+    if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    consults = _sessions[session_id].get("consults", [])
+    consults = session.get("consults", [])
     return [ConsultHistoryItem(**c) for c in consults[-limit:]]
 
 
 @router.delete("/{session_id}")
-async def end_session(session_id: str):
+async def end_session(session_id: str, current_user: Provider = Depends(get_current_user)):
     """End and clean up a session."""
-    if session_id not in _sessions:
+    session = _load_session(session_id)
+    if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    del _sessions[session_id]
+    _delete_session(session_id)
     return {"status": "ended", "session_id": session_id}
 
 
@@ -153,6 +205,7 @@ async def get_session_logs(
     session_id: str,
     log_type: str = Query("orchestrator", description="Log type: orchestrator, agent_runs, llm_calls"),
     limit: int = Query(50, ge=1, le=200),
+    current_user: Provider = Depends(get_current_user),
 ):
     """Get observability logs for a session.
 

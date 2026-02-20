@@ -5,13 +5,18 @@ based on user/company preferences. Supports customizable templates and
 AI-learned patterns from sample notes.
 """
 
+import json
 import logging
 from datetime import datetime, date
+from pathlib import Path
 from typing import Optional, Literal
 from enum import Enum
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from rehab_os.api.audit import log_phi_access
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 from rehab_os.models.clinical import (
     ROMEntry,
     MMTEntry,
@@ -325,14 +330,54 @@ class GeneratedNote(BaseModel):
 
 
 # ==================
-# STORAGE (In-memory for preferences)
+# STORAGE (File-backed with in-memory cache)
 # ==================
 
-# User preferences store (in production, use database)
-user_preferences_store: dict[str, UserPreferences] = {}
+_PREF_DIR = Path("data/preferences")
+_USER_PREF_DIR = _PREF_DIR / "user"
+_COMPANY_PREF_DIR = _PREF_DIR / "company"
+_USER_PREF_DIR.mkdir(parents=True, exist_ok=True)
+_COMPANY_PREF_DIR.mkdir(parents=True, exist_ok=True)
 
-# Company guidelines store
+# In-memory caches
+user_preferences_store: dict[str, UserPreferences] = {}
 company_guidelines_store: dict[str, CompanyGuidelines] = {}
+
+
+def _save_user_prefs(user_id: str, prefs: UserPreferences) -> None:
+    user_preferences_store[user_id] = prefs
+    with open(_USER_PREF_DIR / f"{user_id}.json", "w") as f:
+        json.dump(prefs.model_dump(), f)
+
+
+def _load_user_prefs(user_id: str) -> Optional[UserPreferences]:
+    if user_id in user_preferences_store:
+        return user_preferences_store[user_id]
+    fp = _USER_PREF_DIR / f"{user_id}.json"
+    if fp.exists():
+        with open(fp) as f:
+            prefs = UserPreferences(**json.load(f))
+        user_preferences_store[user_id] = prefs
+        return prefs
+    return None
+
+
+def _save_company_guidelines(company_id: str, guidelines: CompanyGuidelines) -> None:
+    company_guidelines_store[company_id] = guidelines
+    with open(_COMPANY_PREF_DIR / f"{company_id}.json", "w") as f:
+        json.dump(guidelines.model_dump(), f)
+
+
+def _load_company_guidelines(company_id: str) -> Optional[CompanyGuidelines]:
+    if company_id in company_guidelines_store:
+        return company_guidelines_store[company_id]
+    fp = _COMPANY_PREF_DIR / f"{company_id}.json"
+    if fp.exists():
+        with open(fp) as f:
+            guidelines = CompanyGuidelines(**json.load(f))
+        company_guidelines_store[company_id] = guidelines
+        return guidelines
+    return None
 
 
 # ==================
@@ -993,7 +1038,7 @@ async def _generate_from_transcript(
 
 
 @router.post("/generate-from-transcript", response_model=GeneratedNote)
-async def generate_note_from_transcript(req: TranscriptNoteRequest, request: Request):
+async def generate_note_from_transcript(req: TranscriptNoteRequest, request: Request, current_user: Provider = Depends(get_current_user)):
     """Generate a Medicare-compliant SOAP note from a voice transcript using LLM."""
     llm_router = request.app.state.llm_router
     session_memory = getattr(request.app.state, "session_memory", None)
@@ -1014,7 +1059,7 @@ class NoteRequestWithTranscript(NoteRequest):
 
 
 @router.post("/generate", response_model=GeneratedNote)
-async def generate_skilled_note(request: Request, note_request: NoteRequestWithTranscript):
+async def generate_skilled_note(request: Request, note_request: NoteRequestWithTranscript, current_user: Provider = Depends(get_current_user)):
     """Generate a Medicare-compliant skilled note.
 
     The note is generated based on the provided clinical data and styled
@@ -1113,40 +1158,42 @@ async def generate_skilled_note(request: Request, note_request: NoteRequestWithT
 
 
 @router.post("/preferences/save")
-async def save_user_preferences(user_id: str, preferences: UserPreferences):
+async def save_user_preferences(user_id: str, preferences: UserPreferences, current_user: Provider = Depends(get_current_user)):
     """Save user documentation preferences."""
     preferences.user_id = user_id
-    user_preferences_store[user_id] = preferences
+    _save_user_prefs(user_id, preferences)
 
     return {"status": "saved", "user_id": user_id}
 
 
 @router.get("/preferences/{user_id}")
-async def get_user_preferences(user_id: str):
+async def get_user_preferences(user_id: str, current_user: Provider = Depends(get_current_user)):
     """Get user documentation preferences."""
-    if user_id not in user_preferences_store:
+    prefs = _load_user_prefs(user_id)
+    if prefs is None:
         return UserPreferences(user_id=user_id)
-    return user_preferences_store[user_id]
+    return prefs
 
 
 @router.post("/company-guidelines/save")
-async def save_company_guidelines(company_id: str, guidelines: CompanyGuidelines):
+async def save_company_guidelines(company_id: str, guidelines: CompanyGuidelines, current_user: Provider = Depends(get_current_user)):
     """Save company documentation guidelines."""
-    company_guidelines_store[company_id] = guidelines
+    _save_company_guidelines(company_id, guidelines)
 
     return {"status": "saved", "company_id": company_id}
 
 
 @router.get("/company-guidelines/{company_id}")
-async def get_company_guidelines(company_id: str):
+async def get_company_guidelines(company_id: str, current_user: Provider = Depends(get_current_user)):
     """Get company documentation guidelines."""
-    if company_id not in company_guidelines_store:
+    guidelines = _load_company_guidelines(company_id)
+    if guidelines is None:
         raise HTTPException(status_code=404, detail="Company guidelines not found")
-    return company_guidelines_store[company_id]
+    return guidelines
 
 
 @router.post("/learn-from-sample")
-async def learn_from_sample_note(user_id: str, sample_note: str, note_type: NoteType):
+async def learn_from_sample_note(user_id: str, sample_note: str, note_type: NoteType, current_user: Provider = Depends(get_current_user)):
     """Analyze a sample note to learn user's documentation patterns.
 
     The AI will extract patterns like:
@@ -1156,7 +1203,7 @@ async def learn_from_sample_note(user_id: str, sample_note: str, note_type: Note
     - Level of detail
     """
     # Get or create user preferences
-    preferences = user_preferences_store.get(user_id, UserPreferences(user_id=user_id))
+    preferences = _load_user_prefs(user_id) or UserPreferences(user_id=user_id)
 
     # Analyze sample (simplified - in production use NLP/LLM)
     patterns = {
@@ -1183,7 +1230,7 @@ async def learn_from_sample_note(user_id: str, sample_note: str, note_type: Note
 
     preferences.style_preferences.use_abbreviations = patterns["uses_abbreviations"]
 
-    user_preferences_store[user_id] = preferences
+    _save_user_prefs(user_id, preferences)
 
     return {
         "status": "learned",
@@ -1193,7 +1240,7 @@ async def learn_from_sample_note(user_id: str, sample_note: str, note_type: Note
 
 
 @router.get("/templates")
-async def get_note_templates():
+async def get_note_templates(current_user: Provider = Depends(get_current_user)):
     """Get available note templates."""
     return {
         "templates": [
@@ -1368,7 +1415,7 @@ def extract_voice_commands(chunk: str) -> dict:
 
 
 @router.post("/process-chunk", response_model=ChunkResult)
-async def process_transcript_chunk(req: ChunkRequest, request: Request):
+async def process_transcript_chunk(req: ChunkRequest, request: Request, current_user: Provider = Depends(get_current_user)):
     """Process a single transcript chunk incrementally.
 
     Classifies the chunk into a SOAP section, extracts structured data,
@@ -1476,7 +1523,7 @@ async def process_transcript_chunk(req: ChunkRequest, request: Request):
 
 
 @router.get("/medicare-requirements/{note_type}")
-async def get_medicare_requirements(note_type: str):
+async def get_medicare_requirements(note_type: str, current_user: Provider = Depends(get_current_user)):
     """Get Medicare documentation requirements for a note type."""
     if note_type not in MEDICARE_REQUIREMENTS:
         raise HTTPException(status_code=404, detail="Unknown note type")
@@ -1501,7 +1548,6 @@ async def get_medicare_requirements(note_type: str):
 
 import uuid as _uuid
 from datetime import date as _date
-from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rehab_os.core.database import get_db
@@ -1510,10 +1556,17 @@ from rehab_os.core.schemas import ClinicalNoteCreate, ClinicalNoteRead, Clinical
 
 
 @router.post("/save", response_model=ClinicalNoteRead)
-async def save_note(payload: ClinicalNoteCreate, db: AsyncSession = Depends(get_db)):
+async def save_note(payload: ClinicalNoteCreate, db: AsyncSession = Depends(get_db), current_user: Provider = Depends(get_current_user)):
     """Save a finalized clinical note."""
     repo = ClinicalNoteRepository(db)
     note = await repo.create(**payload.model_dump())
+    log_phi_access(
+        user_id=str(current_user.id),
+        action="create",
+        resource_type="clinical_note",
+        resource_id=str(note.id),
+        ip_address="",
+    )
     return note
 
 
@@ -1524,6 +1577,7 @@ async def list_patient_notes(
     q: Optional[str] = None,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
+    current_user: Provider = Depends(get_current_user),
 ):
     """List all notes for a patient, optionally filtered by type or search query."""
     repo = ClinicalNoteRepository(db)
@@ -1533,28 +1587,42 @@ async def list_patient_notes(
 
 
 @router.get("/{note_id}", response_model=ClinicalNoteRead)
-async def get_note(note_id: _uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_note(note_id: _uuid.UUID, db: AsyncSession = Depends(get_db), current_user: Provider = Depends(get_current_user)):
     """Get a single note by ID."""
     repo = ClinicalNoteRepository(db)
     note = await repo.get_by_id(note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
+    log_phi_access(
+        user_id=str(current_user.id),
+        action="read",
+        resource_type="clinical_note",
+        resource_id=str(note_id),
+        ip_address="",
+    )
     return note
 
 
 @router.put("/{note_id}", response_model=ClinicalNoteRead)
-async def update_note(note_id: _uuid.UUID, payload: ClinicalNoteUpdate, db: AsyncSession = Depends(get_db)):
+async def update_note(note_id: _uuid.UUID, payload: ClinicalNoteUpdate, db: AsyncSession = Depends(get_db), current_user: Provider = Depends(get_current_user)):
     """Update an existing note."""
     repo = ClinicalNoteRepository(db)
     updates = {k: v for k, v in payload.model_dump().items() if v is not None}
     note = await repo.update(note_id, **updates)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
+    log_phi_access(
+        user_id=str(current_user.id),
+        action="update",
+        resource_type="clinical_note",
+        resource_id=str(note_id),
+        ip_address="",
+    )
     return note
 
 
 @router.post("/{note_id}/copy", response_model=ClinicalNoteRead)
-async def copy_note(note_id: _uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def copy_note(note_id: _uuid.UUID, db: AsyncSession = Depends(get_db), current_user: Provider = Depends(get_current_user)):
     """Duplicate a note for editing — sets today's date and marks as draft."""
     repo = ClinicalNoteRepository(db)
     original = await repo.get_by_id(note_id)

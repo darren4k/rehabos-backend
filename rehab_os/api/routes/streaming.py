@@ -5,8 +5,11 @@ import json
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
+
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 
 logger = logging.getLogger(__name__)
 
@@ -302,7 +305,7 @@ async def process_streaming_consult(client_id: str, request: dict[str, Any]):
 
 
 @router.get("/ws/status")
-async def websocket_status():
+async def websocket_status(current_user: Provider = Depends(get_current_user)):
     """Get WebSocket connection status."""
     return {
         "active_connections": len(manager.active_connections),

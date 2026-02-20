@@ -16,8 +16,11 @@ import httpx
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel, Field
+
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 
 router = APIRouter(prefix="/scholar", tags=["scholar"])
 
@@ -385,7 +388,7 @@ async def run_learning_cycle(topics: list[str] = None, background_tasks: Backgro
 # ==================
 
 @router.get("/stats", response_model=ScholarStats)
-async def get_scholar_stats():
+async def get_scholar_stats(current_user: Provider = Depends(get_current_user)):
     """Get statistics about the Scholar learning system."""
     index = load_knowledge_index()
 
@@ -403,6 +406,7 @@ async def get_scholar_stats():
 async def trigger_learning(
     background_tasks: BackgroundTasks,
     topics: list[str] = None,
+    current_user: Provider = Depends(get_current_user),
 ):
     """Trigger a learning cycle for specified topics.
 
@@ -425,7 +429,7 @@ async def trigger_learning(
 
 
 @router.get("/knowledge/{topic}")
-async def get_topic_knowledge(topic: str):
+async def get_topic_knowledge(topic: str, current_user: Provider = Depends(get_current_user)):
     """Get synthesized knowledge for a specific topic."""
     index = load_knowledge_index()
 
@@ -458,6 +462,7 @@ async def get_topic_knowledge(topic: str):
 async def list_indexed_articles(
     limit: int = 50,
     source: str = None,
+    current_user: Provider = Depends(get_current_user),
 ):
     """List indexed research articles."""
     index = load_knowledge_index()
@@ -475,7 +480,7 @@ async def list_indexed_articles(
 
 
 @router.get("/topics")
-async def list_topics():
+async def list_topics(current_user: Provider = Depends(get_current_user)):
     """List all topics with indexed knowledge."""
     index = load_knowledge_index()
 
@@ -498,6 +503,7 @@ async def search_research(
     query: str,
     sources: list[str] = ["pubmed", "semantic_scholar"],
     max_results: int = 20,
+    current_user: Provider = Depends(get_current_user),
 ):
     """Search external research sources for a query."""
     all_articles = []
@@ -532,6 +538,7 @@ async def ingest_user_feedback(
     feedback_type: str,  # correction, addition, clarification
     content: str,
     source: str = "user",
+    current_user: Provider = Depends(get_current_user),
 ):
     """Ingest user feedback to improve knowledge.
 
@@ -575,7 +582,7 @@ async def ingest_user_feedback(
 
 
 @router.get("/learning-log")
-async def get_learning_log(limit: int = 50):
+async def get_learning_log(limit: int = 50, current_user: Provider = Depends(get_current_user)):
     """Get recent learning activity log."""
     if not LEARNING_LOG_FILE.exists():
         return {"activities": [], "total": 0}

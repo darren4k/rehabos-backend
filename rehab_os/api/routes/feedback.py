@@ -5,8 +5,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 
 from rehab_os.observability import PromptAnalytics
 
@@ -143,6 +146,7 @@ async def get_review_queue(
     agent_name: Optional[str] = Query(None, description="Filter by agent name"),
     limit: int = Query(50, ge=1, le=200, description="Maximum events to return"),
     needs_review_only: bool = Query(True, description="Only show events needing review"),
+    current_user: Provider = Depends(get_current_user),
 ):
     """Get queue of agent events for review.
 
@@ -179,7 +183,7 @@ async def get_review_queue(
 
 
 @router.post("/annotate", response_model=FeedbackResponse)
-async def submit_feedback(feedback: FeedbackAnnotation):
+async def submit_feedback(feedback: FeedbackAnnotation, current_user: Provider = Depends(get_current_user)):
     """Submit feedback annotation for an agent event.
 
     Marks the event as accepted, rejected, or needs_review,
@@ -210,6 +214,7 @@ async def submit_feedback(feedback: FeedbackAnnotation):
 @router.get("/tuning-candidates", response_model=list[PromptTuningCandidate])
 async def get_tuning_candidates(
     days: int = Query(7, ge=1, le=30, description="Days of history to analyze"),
+    current_user: Provider = Depends(get_current_user),
 ):
     """Get agents that need prompt tuning based on effectiveness metrics.
 
@@ -240,6 +245,7 @@ async def get_tuning_candidates(
 @router.get("/effectiveness", response_model=EffectivenessReportResponse)
 async def get_effectiveness_report(
     days: int = Query(7, ge=1, le=30, description="Days of history to analyze"),
+    current_user: Provider = Depends(get_current_user),
 ):
     """Get comprehensive prompt effectiveness report.
 
@@ -267,7 +273,7 @@ async def get_effectiveness_report(
 
 
 @router.get("/feedback-stats")
-async def get_feedback_stats():
+async def get_feedback_stats(current_user: Provider = Depends(get_current_user)):
     """Get statistics on feedback annotations."""
     feedback_file = _get_log_dir() / "feedback.jsonl"
     if not feedback_file.exists():
@@ -320,7 +326,7 @@ async def get_feedback_stats():
 
 
 @router.get("/improvements")
-async def get_improvement_suggestions():
+async def get_improvement_suggestions(current_user: Provider = Depends(get_current_user)):
     """Get suggested prompt improvements from feedback.
 
     Returns improvement suggestions grouped by agent.

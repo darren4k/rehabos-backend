@@ -24,6 +24,12 @@ async def lifespan(app: FastAPI):
 
     settings = get_settings()
 
+    # Security warnings
+    if settings.jwt_secret == "CHANGE-ME-IN-PRODUCTION":
+        logger.warning("JWT_SECRET is using default value — set JWT_SECRET env var before production deployment")
+    if not settings.cookie_secure:
+        logger.warning("COOKIE_SECURE is False — cookies will be sent over HTTP")
+
     # Initialize components and store in app state
     from rehab_os.llm import create_router_from_settings
     from rehab_os.agents import Orchestrator

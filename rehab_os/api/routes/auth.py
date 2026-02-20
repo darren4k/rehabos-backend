@@ -21,10 +21,13 @@ from rehab_os.core.auth import (
     verify_password,
     REFRESH_COOKIE,
 )
+from rehab_os.api.rate_limit import SlidingWindowRateLimiter
 from rehab_os.core.database import get_db
 from rehab_os.core.models import Provider
 
 router = APIRouter(prefix="/auth")
+
+_auth_limiter = SlidingWindowRateLimiter(max_requests=5, window_seconds=60)
 
 
 # --- Request / Response schemas ---
@@ -75,9 +78,11 @@ class ChangePasswordRequest(BaseModel):
 
 @router.post("/login", response_model=LoginResponse)
 async def login(
+    request: Request,
     body: LoginRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
+    _rate_limit=Depends(_auth_limiter),
 ) -> LoginResponse:
     result = await db.execute(
         select(Provider).where(Provider.email == body.email, Provider.active.is_(True))
@@ -114,9 +119,11 @@ async def logout(response: Response) -> dict:
 
 @router.post("/register", response_model=LoginResponse)
 async def register(
+    request: Request,
     body: RegisterRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
+    _rate_limit=Depends(_auth_limiter),
 ) -> LoginResponse:
     """Self-registration — creates a therapist account."""
     existing = await db.execute(

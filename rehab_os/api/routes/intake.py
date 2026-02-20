@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 from rehab_os.intake.pipeline import IntakePipeline
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,7 @@ async def upload_referral(
     file: UploadFile = File(...),
     source_type: str = Form("referral"),
     referring_provider: Optional[str] = Form(None),
+    current_user: Provider = Depends(get_current_user),
     db: AsyncSession | None = Depends(_get_db_optional),
 ):
     """Upload a referral PDF or image and extract a structured patient profile."""
@@ -88,7 +91,7 @@ async def upload_referral(
 
 
 @router.post("/intake/text")
-async def intake_from_text(request: Request, body: TextIntakeRequest, db: AsyncSession | None = Depends(_get_db_optional)):
+async def intake_from_text(request: Request, body: TextIntakeRequest, current_user: Provider = Depends(get_current_user), db: AsyncSession | None = Depends(_get_db_optional)):
     """Process raw text (copy-paste or typed) through the intake pipeline."""
     if not body.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
@@ -104,6 +107,6 @@ async def intake_from_text(request: Request, body: TextIntakeRequest, db: AsyncS
 
 
 @router.get("/intake/templates")
-async def get_templates():
+async def get_templates(current_user: Provider = Depends(get_current_user)):
     """Return a list of common referral source types."""
     return {"source_types": SOURCE_TYPES}

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.conftest import apply_auth_override
 from rehab_os.api.routes.consult import router
 from rehab_os.models.output import (
     ConsultationResponse,
@@ -33,6 +34,7 @@ def app(mock_orchestrator_service):
     test_app = FastAPI()
     test_app.include_router(router, prefix="/api/v1")
     test_app.state.orchestrator = mock_orchestrator_service
+    apply_auth_override(test_app)
     return test_app
 
 

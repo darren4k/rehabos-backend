@@ -4,8 +4,11 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
+
+from rehab_os.api.dependencies import get_current_user
+from rehab_os.core.models import Provider
 
 from rehab_os.clinical.drug_checker import (
     DrugCheckResult,
@@ -53,7 +56,7 @@ class SnapshotRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("/drug-check", response_model=DrugCheckResult)
-async def drug_check(body: DrugCheckRequest, request: Request):
+async def drug_check(body: DrugCheckRequest, request: Request, current_user: Provider = Depends(get_current_user)):
     """Check drug interactions and rehab-relevant side effects."""
     llm = request.app.state.llm_router
     result = await check_drug_interactions(body.medications, llm)
@@ -73,7 +76,7 @@ async def drug_check(body: DrugCheckRequest, request: Request):
 
 
 @router.post("/symptom-correlate", response_model=list[SideEffectCorrelation])
-async def symptom_correlate(body: SymptomCorrelateRequest, request: Request):
+async def symptom_correlate(body: SymptomCorrelateRequest, request: Request, current_user: Provider = Depends(get_current_user)):
     """Correlate symptoms with medications or disease progression."""
     llm = request.app.state.llm_router
     return await correlate_symptoms(
@@ -82,7 +85,7 @@ async def symptom_correlate(body: SymptomCorrelateRequest, request: Request):
 
 
 @router.post("/snapshot")
-async def create_snapshot(body: SnapshotRequest, request: Request):
+async def create_snapshot(body: SnapshotRequest, request: Request, current_user: Provider = Depends(get_current_user)):
     """Store clinical snapshot and check for alerts."""
     llm = request.app.state.llm_router
     memory = request.app.state.session_memory
@@ -103,7 +106,7 @@ async def create_snapshot(body: SnapshotRequest, request: Request):
 
 
 @router.get("/alerts/{patient_id}", response_model=list[ClinicalAlert])
-async def get_alerts(patient_id: str, request: Request):
+async def get_alerts(patient_id: str, request: Request, current_user: Provider = Depends(get_current_user)):
     """Get clinical alerts from current + historical analysis."""
     llm = request.app.state.llm_router
     memory = request.app.state.session_memory

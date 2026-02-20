@@ -12,6 +12,7 @@ from rehab_os.intake.agent import IntakeAgent, IntakeInput, IntakeResult
 from rehab_os.intake.extractor import extract_text
 from rehab_os.intake.pipeline import IntakePipeline
 from rehab_os.models.patient import CareSetting, Discipline, PatientContext
+from tests.conftest import apply_auth_override
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 SAMPLE_REFERRAL = (FIXTURES / "sample_referral.txt").read_text()
@@ -238,6 +239,7 @@ class TestIntakeAPI:
         app.state.llm_router = mock_llm
         app.state.session_memory = None
 
+        apply_auth_override(app)
         return TestClient(app)
 
     def test_get_templates(self, client):
