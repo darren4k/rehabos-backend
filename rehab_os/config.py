@@ -189,6 +189,32 @@ class Settings(BaseSettings):
         description="STT model name",
     )
 
+    # Revenue Cycle / Clearinghouse
+    clearinghouse_url: str = Field(
+        default="",
+        description="Clearinghouse API endpoint (Inovalon/Availity)",
+    )
+    clearinghouse_api_key: str = Field(
+        default="",
+        description="Clearinghouse API key",
+    )
+    clearinghouse_sender_id: str = Field(
+        default="",
+        description="X12 interchange sender ID",
+    )
+    clearinghouse_receiver_id: str = Field(
+        default="",
+        description="X12 interchange receiver ID",
+    )
+    payer_portal_url: str = Field(
+        default="",
+        description="Payer portal API endpoint (Availity)",
+    )
+    payer_portal_api_key: str = Field(
+        default="",
+        description="Payer portal API key",
+    )
+
     # Debug
     debug_mode: bool = Field(
         default=False,
