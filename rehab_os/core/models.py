@@ -343,7 +343,7 @@ class OutcomeScoreDB(Base):
     __tablename__ = "outcome_scores"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    patient_id: Mapped[str] = mapped_column(String(50), ForeignKey("patients.id"), nullable=False)
+    patient_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("patients.id"), nullable=False)
     episode_id: Mapped[str | None] = mapped_column(String(50))
     encounter_id: Mapped[str | None] = mapped_column(String(50))
     measure_name: Mapped[str] = mapped_column(String(30), nullable=False)  # "LEFS", "ODI", etc.
@@ -365,7 +365,7 @@ class CareTransitionDB(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     transition_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    patient_id: Mapped[str] = mapped_column(String(50), ForeignKey("patients.id"), nullable=False)
+    patient_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("patients.id"), nullable=False)
     from_setting: Mapped[str] = mapped_column(String(20), nullable=False)
     to_setting: Mapped[str] = mapped_column(String(20), nullable=False)
     transition_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
