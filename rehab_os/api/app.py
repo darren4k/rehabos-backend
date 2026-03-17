@@ -9,8 +9,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from rehab_os import __version__
-from rehab_os.api.middleware import APIKeyMiddleware, RequestLoggingMiddleware
-from rehab_os.api.routes import consult, agents, health, feedback, sessions, streaming, mobile, knowledge, analyze, compliance, programs, scholar, chat, extract, notes, voice, intake, scheduling, patients, history, clinical_intel, documents, docpilot, encounter, export, dashboard, team, me, auth
+from rehab_os.api.middleware import (
+    APIKeyMiddleware,
+    AuditMiddleware,
+    RequestLoggingMiddleware,
+    SecurityHeadersMiddleware,
+)
+from rehab_os.api.routes import consult, agents, health, feedback, sessions, streaming, mobile, knowledge, analyze, compliance, programs, scholar, chat, extract, notes, voice, intake, scheduling, patients, history, clinical_intel, documents, docpilot, encounter, export, dashboard, team, me, auth, providers, assistant, vision
 from rehab_os.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -72,12 +77,23 @@ async def lifespan(app: FastAPI):
     app.state.guideline_repo = guideline_repo
     app.state.session_memory = session_memory
 
+    # Initialize cache
+    from rehab_os.cache import init_cache
+
+    cache = await init_cache(redis_url=settings.redis_url)
+    app.state.cache = cache
+    logger.info("Cache initialized")
+
     logger.info("RehabOS API started successfully")
 
     yield
 
     # Shutdown
     logger.info("Shutting down RehabOS API")
+
+    from rehab_os.cache import close_cache
+
+    await close_cache()
 
 
 def create_app() -> FastAPI:
@@ -101,9 +117,17 @@ def create_app() -> FastAPI:
         expose_headers=["Content-Disposition"],
     )
 
-    # Add custom middleware
+    # Add custom middleware (order: last added runs first)
+    # 1. Security headers on every response
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    # 2. Request logging
     app.add_middleware(RequestLoggingMiddleware)
 
+    # 3. HIPAA audit trail for PHI endpoints
+    app.add_middleware(AuditMiddleware)
+
+    # 4. API key / JWT auth
     if settings.api_key:
         app.add_middleware(APIKeyMiddleware, api_key=settings.api_key)
 
@@ -137,6 +161,9 @@ def create_app() -> FastAPI:
     app.include_router(team.router, prefix="/api/v1", tags=["team"])
     app.include_router(auth.router, prefix="/api/v1", tags=["auth"])
     app.include_router(me.router, prefix="/api/v1", tags=["me"])
+    app.include_router(providers.router, prefix="/api/v1", tags=["providers"])
+    app.include_router(assistant.router, prefix="/api/v1", tags=["AI Assistant"])
+    app.include_router(vision.router, prefix="/api/v1", tags=["vision"])
 
     # Exception handlers
     @app.exception_handler(Exception)

@@ -10,6 +10,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum as SAEnum,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -20,6 +21,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+from rehab_os.core.encryption import EncryptedString
 
 import enum
 
@@ -66,15 +69,15 @@ class Patient(Base):
     id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=_new_uuid)
     organization_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"))
     primary_therapist_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("providers.id", ondelete="SET NULL"))
-    first_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    last_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    first_name: Mapped[str] = mapped_column(String(100), nullable=False)  # Searchable — not encrypted
+    last_name: Mapped[str] = mapped_column(String(100), nullable=False)  # Searchable — not encrypted
     dob: Mapped[date] = mapped_column(Date, nullable=False)
     sex: Mapped[str] = mapped_column(String(10), nullable=False)
-    phone: Mapped[str | None] = mapped_column(String(20))
-    email: Mapped[str | None] = mapped_column(String(255))
+    phone: Mapped[str | None] = mapped_column(EncryptedString(20))
+    email: Mapped[str | None] = mapped_column(EncryptedString(255))
     address: Mapped[str | None] = mapped_column(Text)
     emergency_contact_name: Mapped[str | None] = mapped_column(String(200))
-    emergency_contact_phone: Mapped[str | None] = mapped_column(String(20))
+    emergency_contact_phone: Mapped[str | None] = mapped_column(EncryptedString(20))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -331,4 +334,47 @@ class AuditLog(Base):
     __table_args__ = (
         Index("ix_audit_resource", "resource_type", "resource_id"),
         Index("ix_audit_timestamp", "timestamp"),
+    )
+
+
+class OutcomeScoreDB(Base):
+    """Persisted outcome measure scores for longitudinal tracking."""
+
+    __tablename__ = "outcome_scores"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    patient_id: Mapped[str] = mapped_column(String(50), ForeignKey("patients.id"), nullable=False)
+    episode_id: Mapped[str | None] = mapped_column(String(50))
+    encounter_id: Mapped[str | None] = mapped_column(String(50))
+    measure_name: Mapped[str] = mapped_column(String(30), nullable=False)  # "LEFS", "ODI", etc.
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    recorded_by: Mapped[str | None] = mapped_column(String(50))  # provider_id
+
+    __table_args__ = (
+        Index("ix_outcome_scores_patient_id", "patient_id"),
+        Index("ix_outcome_scores_measure", "patient_id", "measure_name"),
+        Index("ix_outcome_scores_recorded_at", "recorded_at"),
+    )
+
+
+class CareTransitionDB(Base):
+    """Persisted care transition records."""
+
+    __tablename__ = "care_transitions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    transition_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    patient_id: Mapped[str] = mapped_column(String(50), ForeignKey("patients.id"), nullable=False)
+    from_setting: Mapped[str] = mapped_column(String(20), nullable=False)
+    to_setting: Mapped[str] = mapped_column(String(20), nullable=False)
+    transition_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reason: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, in_progress, completed
+    clinical_summary: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_care_transitions_patient_id", "patient_id"),
+        Index("ix_care_transitions_status", "status"),
     )

@@ -131,6 +131,64 @@ class Settings(BaseSettings):
         description="PostgreSQL DSN for Patient-Core relational schema",
     )
 
+    # Redis
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        description="Redis URL for caching layer",
+    )
+
+    # HIPAA Audit
+    audit_log_path: str = Field(
+        default="./data/audit/hipaa_audit.jsonl",
+        description="Path to HIPAA audit trail JSONL file",
+    )
+    audit_retention_years: int = Field(
+        default=7,
+        description="Audit log retention in years per HIPAA §164.530(j)",
+    )
+
+    # Rate Limiting
+    rate_limit_enabled: bool = Field(
+        default=True,
+        description="Enable request rate limiting",
+    )
+    rate_limit_default: str = Field(
+        default="100/minute",
+        description="Default rate limit for API endpoints",
+    )
+
+    # Encryption
+    encryption_key: str = Field(
+        default="",
+        description="PHI field encryption key (set REHAB_ENCRYPTION_KEY env var)",
+    )
+
+    # Clinical Settings
+    default_setting: str = Field(
+        default="outpatient",
+        description="Default clinical setting (outpatient, homecare, snf)",
+    )
+
+    # Vision (Qwen3-VL)
+    vision_endpoint: str = Field(
+        default="http://192.168.68.127:11434/v1",
+        description="OpenAI-compatible endpoint for vision model",
+    )
+    vision_model: str = Field(
+        default="qwen3-vl-30b-a3b",
+        description="Vision model name",
+    )
+
+    # STT (Kani ASR)
+    stt_endpoint: str = Field(
+        default="http://192.168.68.127:8090",
+        description="Speech-to-text server endpoint",
+    )
+    stt_model: str = Field(
+        default="kani-asr",
+        description="STT model name",
+    )
+
     # Debug
     debug_mode: bool = Field(
         default=False,

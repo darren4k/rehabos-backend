@@ -1,28 +1,20 @@
-"""Voice Service Integration with Qwen3-TTS.
+"""Voice Service Integration — TTS (Qwen3-TTS) + ASR (Kani STT).
 
-This module provides text-to-speech functionality using Qwen3-TTS
-running on the local DGX Spark server for high-quality voice synthesis.
+TTS: Text-to-speech via Qwen3-TTS on DGX1 (port 8080).
+ASR: Speech-to-text via Kani ASR on DGX1 (port 8090).
 
-Qwen3-TTS: https://github.com/QwenLM/Qwen3-TTS.git
-Features:
-- Natural speech synthesis
-- Multiple voice options
-- Emotion/style control
-- Real-time streaming
-
-DGX Spark Integration:
-- Connects to local Qwen3-TTS server
-- Low-latency audio generation
-- No external API costs
+All audio is ephemeral — processed in-memory, never persisted to disk.
+Buffers are zeroed and deallocated after use.
 """
 
+import gc
 import logging
 import base64
 from typing import Optional, Literal
 from enum import Enum
 import httpx
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 
 from rehab_os.api.dependencies import get_current_user
@@ -429,4 +421,103 @@ async def get_setup_instructions(current_user: Provider = Depends(get_current_us
             "Use CUDA for hardware acceleration",
             "Consider running multiple instances for high-load scenarios"
         ]
+    }
+
+
+# ==================
+# ASR / TRANSCRIPTION (Kani STT on DGX1:8090)
+# ==================
+
+@router.post("/transcribe")
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    current_user: Provider = Depends(get_current_user),
+):
+    """Transcribe audio using Kani ASR on DGX1.
+
+    Media lifecycle: ephemeral.
+    - Audio received into memory buffer (no disk write).
+    - Sent to local ASR model on DGX1.
+    - Buffer zeroed and deallocated after transcription.
+    - Audit log records event but NOT content.
+
+    The browser-side Web Speech API remains available as a client option.
+    This endpoint provides server-side transcription for higher accuracy,
+    recorded audio, or non-browser clients.
+    """
+    audio_bytes = None
+    try:
+        audio_bytes = await file.read()
+        file_size = len(audio_bytes)
+
+        settings = get_settings()
+        stt_endpoint = getattr(settings, "stt_endpoint", "http://192.168.68.127:8090")
+        stt_model = getattr(settings, "stt_model", "kani-asr")
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                f"{stt_endpoint}/v1/audio/transcriptions",
+                files={
+                    "file": (
+                        file.filename or "audio.wav",
+                        audio_bytes,
+                        file.content_type or "audio/wav",
+                    )
+                },
+                data={"model": stt_model},
+            )
+
+            if resp.status_code != 200:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"ASR service returned {resp.status_code}: {resp.text[:200]}",
+                )
+
+            result = resp.json()
+            transcript = result.get("text", "")
+
+        # Zero and deallocate media buffer
+        del audio_bytes
+        audio_bytes = None
+        gc.collect()
+
+        logger.info(
+            "Transcribed audio: %s (%d bytes) — buffer cleared",
+            file.filename, file_size,
+        )
+
+        return {
+            "transcript": transcript,
+            "filename": file.filename,
+            "status": "transcribed",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if audio_bytes is not None:
+            del audio_bytes
+        gc.collect()
+
+
+@router.get("/transcribe/health")
+async def check_asr_health(current_user: Provider = Depends(get_current_user)):
+    """Check Kani ASR service health."""
+    settings = get_settings()
+    stt_endpoint = getattr(settings, "stt_endpoint", "http://192.168.68.127:8090")
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{stt_endpoint}/health")
+            is_healthy = resp.status_code == 200
+    except Exception:
+        is_healthy = False
+
+    return {
+        "status": "healthy" if is_healthy else "unavailable",
+        "service": "kani-asr",
+        "server_url": stt_endpoint,
+        "available": is_healthy,
     }

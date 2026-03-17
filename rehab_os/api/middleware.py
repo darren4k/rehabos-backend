@@ -1,4 +1,4 @@
-"""API middleware for authentication and logging."""
+"""API middleware for authentication, logging, security headers, and HIPAA audit."""
 
 import hmac
 import logging
@@ -11,6 +11,93 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from rehab_os.core.auth import ACCESS_COOKIE, decode_token
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Security Headers
+# ---------------------------------------------------------------------------
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses (OWASP best practices)."""
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        return response
+
+
+# ---------------------------------------------------------------------------
+# HIPAA Audit Trail
+# ---------------------------------------------------------------------------
+
+# Route prefixes that touch PHI and must be audited
+_PHI_PREFIXES = (
+    "/api/v1/patients",
+    "/api/v1/encounter",
+    "/api/v1/notes",
+    "/api/v1/export",
+    "/api/v1/documents",
+    "/api/v1/intake",
+    "/api/v1/history",
+)
+
+_METHOD_ACTION_MAP = {
+    "GET": "view",
+    "POST": "create",
+    "PUT": "modify",
+    "PATCH": "modify",
+    "DELETE": "delete",
+}
+
+
+class AuditMiddleware(BaseHTTPMiddleware):
+    """Log PHI-related endpoint access to the HIPAA audit trail."""
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        path = request.url.path
+
+        # Only audit PHI-related routes
+        if not any(path.startswith(prefix) for prefix in _PHI_PREFIXES):
+            return await call_next(request)
+
+        response = await call_next(request)
+
+        # Only audit successful requests (2xx/3xx)
+        if response.status_code >= 400:
+            return response
+
+        # Best-effort audit logging — never block the response
+        try:
+            from rehab_os.compliance.audit import get_audit_service
+
+            user_id = ""
+            token = request.cookies.get(ACCESS_COOKIE)
+            if token:
+                claims = decode_token(token)
+                if claims:
+                    user_id = claims.get("sub", "")
+
+            action = _METHOD_ACTION_MAP.get(request.method, "view")
+            ip = request.client.host if request.client else "unknown"
+
+            get_audit_service().log_quick(
+                user_id=user_id,
+                action=action,
+                resource_type=path.split("/")[3] if len(path.split("/")) > 3 else "unknown",
+                ip_address=ip,
+                detail=f"{request.method} {path}",
+            )
+        except Exception as e:
+            logger.warning("Audit middleware logging failed: %s", e)
+
+        return response
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
