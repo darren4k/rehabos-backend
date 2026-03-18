@@ -58,8 +58,8 @@ class Settings(BaseSettings):
 
     # Qwen3-TTS Voice Server (DGX Spark)
     tts_server_url: str = Field(
-        default="http://192.168.68.127:8080",
-        description="URL for Qwen3-TTS server running on DGX Spark",
+        default="http://192.168.68.127:8090",
+        description="URL for Kani TTS server running on DGX Spark",
     )
     tts_enabled: bool = Field(
         default=True,
