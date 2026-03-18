@@ -15,7 +15,7 @@ from rehab_os.api.middleware import (
     RequestLoggingMiddleware,
     SecurityHeadersMiddleware,
 )
-from rehab_os.api.routes import consult, agents, health, feedback, sessions, streaming, mobile, knowledge, analyze, compliance, programs, scholar, chat, extract, notes, voice, intake, scheduling, patients, history, clinical_intel, documents, docpilot, encounter, export, dashboard, team, me, auth, providers, assistant, vision, fhir, flow_sheets, patient_portal, oasis, revenue
+from rehab_os.api.routes import consult, agents, health, feedback, sessions, streaming, mobile, knowledge, analyze, compliance, programs, scholar, chat, extract, notes, voice, intake, scheduling, patients, history, clinical_intel, documents, docpilot, encounter, export, dashboard, team, me, auth, providers, assistant, vision, fhir, flow_sheets, patient_portal, oasis, revenue, agent_profile
 from rehab_os.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -170,6 +170,7 @@ def create_app() -> FastAPI:
     app.include_router(patient_portal.router, prefix="/api/v1", tags=["patient-portal"])
     app.include_router(oasis.router, prefix="/api/v1", tags=["oasis"])
     app.include_router(revenue.router, prefix="/api/v1", tags=["revenue-cycle"])
+    app.include_router(agent_profile.router, prefix="/api/v1", tags=["agent-profile"])
 
     # Exception handlers
     @app.exception_handler(Exception)
