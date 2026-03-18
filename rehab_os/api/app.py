@@ -163,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(me.router, prefix="/api/v1", tags=["me"])
     app.include_router(providers.router, prefix="/api/v1", tags=["providers"])
     app.include_router(assistant.router, prefix="/api/v1", tags=["AI Assistant"])
+    app.include_router(assistant.public_router, prefix="/api/v1", tags=["AI Assistant Public"])
     app.include_router(vision.router, prefix="/api/v1", tags=["vision"])
     app.include_router(fhir.router, prefix="/api/v1", tags=["FHIR"])
     app.include_router(flow_sheets.router, prefix="/api/v1", tags=["flow-sheets"])
